@@ -24,7 +24,7 @@ pld.db_begin('linelists')
 
 #%% -------------------------------------- inputs we generally change -------------------------------------- 
 
-num_IGs_avg = 2 # how many IGs to average together
+num_IGs_avg = 3 # how many IGs to average together
 
 f_counter_n = 9998061.1 # nominal near 10 MHz reading of the counter
 ppIG = 17507
@@ -198,24 +198,67 @@ for ig_start in range(num_iters+1):
         fit_results[ig_start, 6*i+3] = fit.params['shift'].stderr
         fit_results[ig_start, 6*i+4] = fit.params['molefraction'].value
         fit_results[ig_start, 6*i+5] = fit.params['molefraction'].stderr
+               
+
+    #%% save figure as you go so you can make a movie later (#KeepingUpWithPeter)
+           
+        TD_model_fit = fit.best_fit
+        weight = fit.weights
+        # plot frequency-domain fit
+        trans_meas_noBL = np.real(np.fft.rfft(TD_meas_fit - (1-weight) * (TD_meas_fit - TD_model_fit)))
+        trans_model = np.real(np.fft.rfft(TD_model_fit))
+        # plot with residual
+        fig, axs = plt.subplots(2,2, sharex = 'col', sharey = 'row', figsize=(10, 4),
+                                gridspec_kw={'height_ratios': [3,1], 'width_ratios': [3,1], 'hspace':0.015, 'wspace':0.005})
         
-        td.plot_fit(wvn_fit, fit, plot_td=False, wvn_range=data[molecule]['wvn2_plot']) 
+        # title
+        T_plot = str(int(np.round(fit.params['temperature'].value,0)))
+        y_plot = str(np.round(fit.params['molefraction'].value*100,1))
+        t_plot = str(int(np.round((ig_start + num_IGs_avg / 2)/dfrep*1e6,0)))
+        P_plot = str(np.round(P,1))
         
+        plt.suptitle('{} at {} K, {} atm, and {}% while averaging {} IG, ~{} us post shock'.format(molecule, T_plot, P_plot, y_plot, num_IGs_avg, t_plot))
+        
+        # fit plot to the right range
+        i_range = td.bandwidth_select_td(wvn_fit, data[molecule]['wvn2_plot'])
+        wvn_plot = wvn_fit[i_range[0]:i_range[1]]
+        wvl_plot = 10000 / wvn_plot
+        trans_meas_noBL = trans_meas_noBL[i_range[0]:i_range[1]]
+        trans_model = trans_model[i_range[0]:i_range[1]]
+        
+        # top left plot - absorbance over wavelength for both model and meas
+        axs[0,0].plot(wvl_plot, trans_meas_noBL, label='meas')
+        axs[0,0].plot(wvl_plot, trans_model, label='model')
+        axs[0,0].legend(loc='upper right')
+        axs[0,0].set_ylabel('Absorbance')
+        
+        if molecule == 'CO': axs[0,0].set_ylim(-0.25, 1.5)
+        elif molecule == 'H2CO': axs[0,0].set_ylim(-0.05, 0.15)
 
+        # bottom left plot - absorbance over wavelength for both model and meas        
+        axs[1,0].plot(wvl_plot, trans_meas_noBL - trans_model, label='meas-model')
+        axs[1,0].legend(loc='upper right')
+        axs[1,0].set_ylabel('Residual')
+        axs[1,0].set_xlabel('Wavelength (um)')
 
-#%%
-asdfasd=asdfasdf
+        
+        if molecule == 'CO': axs[1,0].set_ylim(-0.15, 0.15)
+        elif molecule == 'H2CO': axs[1,0].set_ylim(-0.15, 0.15)
+        
+        
+        # top right plot - absorbance over some wavelength for both model and meas
+        axs[0,1].plot(wvl_plot, trans_meas_noBL, label='meas')
+        axs[0,1].plot(wvl_plot, trans_model, label='model')
+        
+        if molecule == 'CO': axs[0,1].set_xlim(4.4809, 4.4868)
+        elif molecule == 'H2CO': axs[0,1].set_xlim(3.539, 3.546)
+           
+        # bottom right plot - absorbance over some wavelength for both model and meas        
+        axs[1,1].plot(wvl_plot, trans_meas_noBL - trans_model, label='meas-model')
+        
+        plt.savefig(os.path.abspath('')+r'/plots/{} {} averaging {}.jpg'.format(molecule, ig_start, num_IGs_avg), bbox_inches='tight')
 
-for i in range(34):
-    if i >0:
-        plt.figure(i)
-        if i%2==1:
-            plt.title('CO {} averaging {} IGs'.format(i//2,num_IGs_avg))
-            plt.savefig('CO {}.jpg'.format(i//2))
-        else:
-            plt.title('H2CO {} averaging {} IGs'.format(i//2,num_IGs_avg))
-            plt.savefig('H2CO {}.jpg'.format(i//2))
-
+        
 
 
 
