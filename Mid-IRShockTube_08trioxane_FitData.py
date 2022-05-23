@@ -9,10 +9,10 @@ from scipy import signal
 import os
 from sys import path
 
-path.append(os.path.abspath('..') + '\\modules')
+# path.append(os.path.abspath('..') + '\\modules')
 
-import pldspectrapy as pld
-import td_support as td  # time domain support
+import spectral_fitting_package.pldspectrapy as pld
+import spectral_fitting_package.td_support as td  # time domain support
 import clipboard_and_style_sheet
 
 clipboard_and_style_sheet.style_sheet()
