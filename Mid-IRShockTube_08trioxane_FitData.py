@@ -5,7 +5,6 @@ import time
 import psutil
 while psutil.cpu_percent() > 80: time.sleep(60*15) # hang out for 15 minutes if CPU is busy
 
-
 import numpy as np
 import matplotlib.pyplot as plt
 
@@ -35,8 +34,8 @@ save_fits = True
 T_fit_which = 'CO' # which molecule to use to fit temperature, True = all, False = None (fixed) 
 # will now automatically put T_fit_which first in fitting order
 
-bins_avg = 16 # how many bins to average together (if #bins=8, bins_avg=3 means each iteration is ~3/8 * 1/dfrep)
-bins_step = 4 # how many bins to skip between averages
+# bins_avg = 16 # how many bins to average together (if #bins=8, bins_avg=3 means each iteration is ~3/8 * 1/dfrep)
+# bins_step = 8 # how many bins to skip between averages
 
 ig_start = 19 # start processing IG's at #ig_start (actual value * #bins, aka actual full IG's)
 ig_stop = 40 # assume the process has completed itself by ig_stop (actual value * #bins, aka actual full IG's)
@@ -79,8 +78,8 @@ for i, molecule in enumerate(molecules_meas):
     data[molecule] = {}
     
     if molecule == 'CO': 
-        data[molecule]['file_meas'] = 'co_surf27_and_28_8timebins.npy'
-        data[molecule]['file_vac'] = 'co_vacuum_background.bin'
+        data[molecule]['file_meas'] = 'batt_5_co_avged_shocks_20_before_50_after.npy'
+        data[molecule]['file_vac'] = '4.5um_filter_phase_corrected.npy'
         
         data[molecule]['wvn2_fit'] = [10000/4.62, 10000/4.40]
         data[molecule]['wvn2_plot'] = [2187,2240]
@@ -90,8 +89,8 @@ for i, molecule in enumerate(molecules_meas):
         else: data[molecule]['y_expected'] = [1E-7, 0.001, 0.075][T_which]
        
     elif molecule == 'H2CO': 
-        data[molecule]['file_meas'] = 'h2co_surf27_and_28_8timebins.npy'
-        data[molecule]['file_vac'] = 'h2co_vacuum_background.bin'
+        data[molecule]['file_meas'] = 'batt_5_h2co_avged_shocks_20_before_50_after.npy'
+        data[molecule]['file_vac'] = '3.5um_filter_phase_corrected.npy'
         
         data[molecule]['wvn2_fit'] = [10000/3.59, 10000/3.44]
         data[molecule]['wvn2_plot'] = [2787,2887]
@@ -109,25 +108,31 @@ for i, molecule in enumerate(molecules_meas):
     if molecule == T_fit_which: data[molecule]['calc_T'] = True # calc T needs to be the first listed in molecules_meas so we do that first
     else: data[molecule]['calc_T'] = False
         
-    data[molecule]['folder'] = r'H:\ShockTubeData\\'
-    
+    data[molecule]['folder_data'] = r'H:\ShockTubeData\DATA_MATT_PATRICK_TRIP_2\\'
+    data[molecule]['folder_vac'] = r'H:\ShockTubeData\DATA_MATT_PATRICK_TRIP_2\vacuum_bckgnd\\' # best for batt5_h2co
+    # data[molecule]['folder_vac'] = r'H:\ShockTubeData\DATA_MATT_PATRICK_TRIP_2\vacuum_bckgnd_after_cleaning\\'
+    # data[molecule]['folder_vac'] = r'H:\ShockTubeData\DATA_MATT_PATRICK_TRIP_2\vacuum_bckgnd_end_of_experiment\\'
+
     
     #%% -------------------------------------- load data -------------------------------------- 
 
     # read in the IGs (averaged between shocks, not averaged in time)
-    IG_all = np.load(data[molecule]['folder']+data[molecule]['file_meas'])
+    IG_all = np.load(data[molecule]['folder_data'] + data[molecule]['file_meas']) # use this line for .npy files
+    # IG_all = np.fromfile(data[molecule]['folder']+data[molecule]['file_meas']) # use this line for .bin files (will also need tdo reshape)
+
     IG_shape = np.shape(IG_all)
     ppIG = IG_shape[-1]
+
+    data[molecule]['IG_all'] = IG_all # .reshape((IG_shape[0] * IG_shape[1], IG_shape[2]), order='F') # this helped with time binning, no longer used
+
     print('*************************************************')
     print('****** {} IG shape is {}, ******************'.format(molecule, IG_shape))
     print('****** which should mean there are ******************')
     print('****** {} bins with {} IGs in each bin ******************'.format(IG_shape[0], IG_shape[1]))
     print('*************************************************')
     
-    data[molecule]['IG_all'] = IG_all.reshape((IG_shape[0]*IG_shape[1], IG_shape[2]), order='F')
-    
     # load in the vacuum scan and smooth it
-    data[molecule]['IG_vac'] = np.fromfile(data[molecule]['folder']+data[molecule]['file_vac'])
+    data[molecule]['IG_vac'] = np.load(data[molecule]['folder_vac']+data[molecule]['file_vac'])
     i_center = int((len(data[molecule]['IG_vac'])-1)/2)
     data[molecule]['meas_vac'] = np.fft.fftshift(np.fft.fft(np.fft.ifftshift(data[molecule]['IG_vac']))).__abs__()[:i_center+1] # fft and remove reflected portion
     
@@ -159,7 +164,7 @@ for i, molecule in enumerate(molecules_meas):
     if molecule == 'C3H6O3': 
         
         # read in the IGs (averaged between shocks, not averaged in time)
-        IG_avg = np.mean(data[molecule]['IG_all'][:][0:ig_shock-1], axis=0) # use pre-shock IGs for trioxane baseline
+        IG_avg = np.mean(data[molecule]['IG_all'][0:ig_shock-1], axis=0) # use pre-shock IGs for trioxane baseline
         trans_meas = np.fft.fftshift(np.fft.fft(np.fft.ifftshift(IG_avg))).__abs__()[:i_center+1] / data[molecule]['meas_vac_smooth']
         
         i_fits = td.bandwidth_select_td(data[molecule]['wvn'], data[molecule]['wvn2_fit'], max_prime_factor=50) # wavenumber indices of interest
