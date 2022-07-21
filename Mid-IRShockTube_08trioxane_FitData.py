@@ -29,16 +29,23 @@ pld.db_begin('linelists')
 
 f_counter_n = 9998061.1 # nominal near 10 MHz reading of the counter
 
-fit_pressure = False # <----------------------currently unused, probably need to update CO for argon broadening first
-fits_plot = ['temperature', 'molefraction','shift']
-T_fit_which = 'H2CO' # which molecule to use to fit temperature, True = all, will now automatically put T_fit_which first in fitting order
+fit_pressure = False # <--------------- use wisely, probably need to update CO for argon broadening first
+save_fits = True
 
-bins_avg = 6 # how many bins to average together (if #bins=8, bins_avg=3 means each iteration is ~3/8 * 1/dfrep)
+T_fit_which = 'CO' # which molecule to use to fit temperature, True = all, False = None (fixed) 
+# will now automatically put T_fit_which first in fitting order
 
-ig_start = 17 # start processing IG's at #ig_start (actual value * #bins, aka actual full IG's)
+bins_avg = 16 # how many bins to average together (if #bins=8, bins_avg=3 means each iteration is ~3/8 * 1/dfrep)
+bins_step = 4 # how many bins to skip between averages
+
+ig_start = 19 # start processing IG's at #ig_start (actual value * #bins, aka actual full IG's)
 ig_stop = 40 # assume the process has completed itself by ig_stop (actual value * #bins, aka actual full IG's)
 ig_shock = 19 # python index for the IG where the shock occurs (currently 20th shock, eg IG index 19)
 
+molecules_meas = ['CO', 'H2CO', 'C3H6O3']
+
+fits_plot = ['temperature', 'molefraction','shift']
+if fit_pressure: fits_plot.append('pressure') # if we're fitting it, you probably want to save it
 
 #%% -------------------------------------- inputs you probably don't want to change -------------------------------------- 
       
@@ -65,7 +72,6 @@ T = T_all[T_which]
 #%% -------------------------------------- start dict that will hold data for the different molecules -------------------------------------- 
 
 data = {}
-molecules_meas = ['CO', 'H2CO', 'C3H6O3']
 molecules_meas.insert(0, molecules_meas.pop(molecules_meas.index(T_fit_which))) # bring T_fit_which to the beginning of this list
 
 for i, molecule in enumerate(molecules_meas): 
@@ -163,12 +169,14 @@ for i, molecule in enumerate(molecules_meas):
         
 #%% -------------------------------------- average IGs together as desired (loop it) -------------------------------------- 
 
+
+
+asdfasdfasdf
 # program will loop through them like this (assuming bins_avg = 3, ig_start = 15): 15b1+15b2+15b3, 15b2+15b3+15b4, ..., 15b7+15b8+16b1, 15b8+16b1+16b3, ...
-ig_start_iters = np.arange(ig_start*IG_shape[0], ig_stop*IG_shape[0] - bins_avg+1)
+ig_start_iters = np.arange(ig_start*IG_shape[0], ig_stop*IG_shape[0] - bins_avg+1)[::bins_step]
 
 fit_results = np.zeros((len(ig_start_iters),1+2*len(fits_plot)*len(molecules_meas))) 
 # data format: [time, fits_plot[0]_molecule_1, fits_plot[0]_unc_molecule_1, fits_plot[1]_molecule_1, ..., fits_plot[0]_molecule_2, fits_plot[0]_unc_molecule_2, ...]
-
 
 for i_ig, ig_start_iter in enumerate(ig_start_iters): 
     
@@ -215,7 +223,7 @@ for i_ig, ig_start_iter in enumerate(ig_start_iters):
             pars['shift'].vary = True
                                          
             pars['pathlength'].set(value = PL, vary = False)
-            pars['pressure'].set(value = P + P*np.random.rand()/1000, vary = False)
+            pars['pressure'].set(value = P + P*np.random.rand()/1000, vary = fit_pressure)
             pars['temperature'].set(value = T + T*np.random.rand()/1000, vary = data[molecule]['calc_T'], min=250, max=3000)
             pars['molefraction'].set(value = data[molecule]['y_expected']*np.random.rand()/1000, vary = True)
             
@@ -242,7 +250,7 @@ for i_ig, ig_start_iter in enumerate(ig_start_iters):
             
             fit = mod.fit(TD_meas_fit, xx = wvn_fit, xx_HITRAN=wvn_fit, coef_HITRAN=data[molecule]['trioxane_ref_coefs'], 
                           weights = weight, params = pars)
-                       
+            
         else: 
             
             fit = mod.fit(TD_meas_fit, xx = wvn_fit, params = pars, weights = weight, name=molecule)
@@ -301,12 +309,10 @@ for i_ig, ig_start_iter in enumerate(ig_start_iters):
         axs[1,0].legend(loc='upper right')
         axs[1,0].set_ylabel('Residual')
         axs[1,0].set_xlabel('Wavelength (um)')
-
         
         if molecule == 'CO': axs[1,0].set_ylim(-0.15, 0.15)
         elif molecule == 'H2CO': axs[1,0].set_ylim(-0.15, 0.15)
-        
-        
+                
         # top right plot - absorbance over some wavelength for both model and meas
         axs[0,1].plot(wvl_plot, trans_meas_noBL, label='meas')
         axs[0,1].plot(wvl_plot, trans_model, label='model')
@@ -317,40 +323,49 @@ for i_ig, ig_start_iter in enumerate(ig_start_iters):
         # bottom right plot - absorbance over some wavelength for both model and meas        
         axs[1,1].plot(wvl_plot, trans_meas_noBL - trans_model, label='meas-model')
         
-        plt.savefig(os.path.abspath('')+r'\plots\fitting {} using T_{} while averaging {} bins starting with IG x bin = {}.jpg'.format(
-                                                molecule, T_fit_which, bins_avg, ig_start_iter), bbox_inches='tight')
-        
+        if save_fits: 
+            
+            plt.savefig(os.path.abspath('')+r'\plots\fitting {} using T_{} while averaging {} bins starting with IG x bin = {}.jpg'.format(
+                molecule, T_fit_which, bins_avg, ig_start_iter), bbox_inches='tight')
+
+            np.save(os.path.abspath('')+r'\plots\fit results using T_{} while averaging {} bins'.format(T_fit_which, bins_avg), fit_results)
+
         plt.close()
         
 #%% -------------------------------------- plot the fit results with error bars -------------------------------------- 
+
+fit_results = np.load(os.path.abspath('')+r'\plots\fit results using T_{} while averaging {} bins.npy'.format(T_fit_which, bins_avg))
+
+# fit_results = fit_results[fit_results[0,:] != 0,:]
 
 x_offset = 0.15
 
 for i_results, which_results in enumerate(fits_plot): 
 
     plt.figure(figsize=(6, 4), dpi=200, facecolor='w', edgecolor='k')
-    
+    plt.title('T_{} while averaging {} bins.npy'.format(T_fit_which, bins_avg)) 
 
     for i_molecule, molecule in enumerate(molecules_meas): 
-        
+    
+        # for bin_avg in [1,3,6]: 
+            
+        #     if bin_avg == 1: fit_results = fit_results1CO
+        #     elif bin_avg == 3: fit_results = fit_results3CO
+        #     elif bin_avg ==6: fit_results = fit_results6CO
+            
         plot_x = fit_results[:,0] + x_offset*i_molecule
         
         plot_y = fit_results[:, 6*i_molecule+2*i_results+1]
         plot_y_unc = fit_results[:, 6*i_molecule+2*i_results+2]
                        
         plt.errorbar(plot_x, plot_y, yerr=plot_y_unc, color='k', ls='none', zorder=1)
-        plt.plot(plot_x, plot_y, marker='x', label=molecule, zorder=2)
-        
+        plt.plot(plot_x, plot_y, marker='x', label='{} over {} bins'.format(molecule, bins_avg) , zorder=2)
+            
         
     plt.xlabel('Time Post Shock (us)')
     plt.ylabel('{}'.format(which_results))
     
     plt.legend()
-        
-        
-        
-        
-        
-        
-        
+    
+    
         
