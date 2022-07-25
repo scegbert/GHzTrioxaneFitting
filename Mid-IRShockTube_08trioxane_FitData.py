@@ -42,7 +42,8 @@ ig_start = 0 # start processing IG's at #ig_start
 ig_stop = 49 # assume the process has completed itself by ig_stop 
 ig_avg = 1 # how many to average together
 
-ig_shock = 19 # python index for the IG where the shock occurs (currently 20th shock, eg IG index 19)
+ig_inc_shock = 19.5 # average location of the incident shock (this is what the data is clocked off of)
+t_inc2ref_shock = 35 # time between incident and reflected shock
 
 molecules_meas = ['CO', 'H2CO', 'C3H6O3']
 
@@ -84,6 +85,7 @@ for i, molecule in enumerate(molecules_meas):
     if molecule == 'CO': 
         data[molecule]['file_meas'] = ['batt_4_co_avged_shocks_20_before_50_after.npy', 'batt_5_co_avged_shocks_20_before_50_after.npy'] # should be list
         data[molecule]['file_vac'] = '4.5um_filter_phase_corrected.npy'
+        
         
         data[molecule]['wvn2_fit'] = [10000/4.62, 10000/4.40]
         data[molecule]['wvn2_plot'] = [2187,2240]
@@ -167,7 +169,7 @@ for i, molecule in enumerate(molecules_meas):
     if molecule == 'C3H6O3': 
         
         # read in the IGs (averaged between shocks, not averaged in time)
-        IG_avg = np.mean(data[molecule]['IG_all'][0:ig_shock-1], axis=0) # use pre-shock IGs for trioxane baseline
+        IG_avg = np.mean(data[molecule]['IG_all'][0:int(ig_inc_shock)-1], axis=0) # use pre-shock IGs for trioxane baseline
         trans_meas = np.fft.fftshift(np.fft.fft(np.fft.ifftshift(IG_avg))).__abs__()[:i_center+1] / data[molecule]['meas_vac_smooth']
         
         i_fits = td.bandwidth_select_td(data[molecule]['wvn'], data[molecule]['wvn2_fit'], max_prime_factor=50) # wavenumber indices of interest
@@ -290,10 +292,10 @@ for i_ig, ig_start_iter in enumerate(ig_start_iters):
             fit_results[i_ig, 6*i_molecule+2*i_results+2] = fit.params[which_results].stderr
                
 #%% --------------------------------------  save figure as you go so you can make a movie later (#KeepingUpWithPeter) -------------------------------------- 
-        ig_avg_location = ig_start_iter - ig_shock # (ig_start_iter + ig_stop_iter-1)/2/IG_shape[0] - ig_shock # average full IG periodes post shock\
-        fit_results[i_ig, 0] = ig_avg_location/dfrep*1e6
+        ig_avg_location = (ig_start_iter + ig_stop_iter-1)/2 - ig_inc_shock # average full IG periodes post shock\
+        fit_results[i_ig, 0] = ig_avg_location/dfrep*1e6 - t_inc2ref_shock # time referenced to the reflected shock wave
         t_plot = str(int(np.round(fit_results[i_ig, 0])))
-        
+                
         if plot_fits: 
         
             TD_model_fit = fit.best_fit
