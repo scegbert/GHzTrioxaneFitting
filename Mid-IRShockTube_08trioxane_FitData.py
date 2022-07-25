@@ -28,7 +28,8 @@ pld.db_begin('linelists')
 
 f_counter_n = 9998061.1 # nominal near 10 MHz reading of the counter
 
-fit_pressure = False # <--------------- use wisely, probably need to update CO for argon broadening first
+fit_pressure = False # <--------------- use wisely, probably need to update CO for argon broadening first (also would want to link pressures first as well)
+plot_fits = False
 save_fits = True
 
 T_fit_which = 'CO' # which molecule to use to fit temperature, True = all, False = None (fixed) 
@@ -37,8 +38,10 @@ T_fit_which = 'CO' # which molecule to use to fit temperature, True = all, False
 # bins_avg = 16 # how many bins to average together (if #bins=8, bins_avg=3 means each iteration is ~3/8 * 1/dfrep)
 # bins_step = 8 # how many bins to skip between averages
 
-ig_start = 19 # start processing IG's at #ig_start (actual value * #bins, aka actual full IG's)
-ig_stop = 40 # assume the process has completed itself by ig_stop (actual value * #bins, aka actual full IG's)
+ig_start = 0 # start processing IG's at #ig_start
+ig_stop = 49 # assume the process has completed itself by ig_stop 
+ig_avg = 1 # how many to average together
+
 ig_shock = 19 # python index for the IG where the shock occurs (currently 20th shock, eg IG index 19)
 
 molecules_meas = ['CO', 'H2CO', 'C3H6O3']
@@ -58,8 +61,9 @@ H_precursor = False
 
 #%% -------------------------------------- generally applicable model conditions -------------------------------------- 
 
-T_pre = 1400 # temperature in K before the shock (for scaling trioxane measurement)
-P_pre = 5.0 # pressure in atm before the shock (for scaling trioxane measurement)
+T_pre = 300 # temperature in K before the shock (for scaling trioxane measurement)
+P_pre = 0.1 # pressure in atm before the shock (for scaling trioxane measurement)
+y_trioxane = 0.037/3 # guess at trioxane concentration (number doesn't matter, just for scaling)
 
 P = 5.0 # pressure in atm after shock (currently assuming constant P)
 PL = 1.27 # cm length of cell in furnace (double pass)
@@ -78,7 +82,7 @@ for i, molecule in enumerate(molecules_meas):
     data[molecule] = {}
     
     if molecule == 'CO': 
-        data[molecule]['file_meas'] = 'batt_5_co_avged_shocks_20_before_50_after.npy'
+        data[molecule]['file_meas'] = ['batt_4_co_avged_shocks_20_before_50_after.npy', 'batt_5_co_avged_shocks_20_before_50_after.npy'] # should be list
         data[molecule]['file_vac'] = '4.5um_filter_phase_corrected.npy'
         
         data[molecule]['wvn2_fit'] = [10000/4.62, 10000/4.40]
@@ -89,7 +93,7 @@ for i, molecule in enumerate(molecules_meas):
         else: data[molecule]['y_expected'] = [1E-7, 0.001, 0.075][T_which]
        
     elif molecule == 'H2CO': 
-        data[molecule]['file_meas'] = 'batt_5_h2co_avged_shocks_20_before_50_after.npy'
+        data[molecule]['file_meas'] = ['batt_4_h2co_avged_shocks_20_before_50_after.npy', 'batt_5_h2co_avged_shocks_20_before_50_after.npy']
         data[molecule]['file_vac'] = '3.5um_filter_phase_corrected.npy'
         
         data[molecule]['wvn2_fit'] = [10000/3.59, 10000/3.44]
@@ -99,8 +103,8 @@ for i, molecule in enumerate(molecules_meas):
         else: data[molecule]['y_expected'] = [0.20, 0.20, 0.12][T_which]
         
     elif molecule == 'C3H6O3': 
-        data[molecule]['file_meas'] = data['H2CO']['file_meas']
-        data[molecule]['file_vac'] = data['H2CO']['file_vac']
+        data[molecule]['file_meas'] = ['batt_4_h2co_avged_shocks_20_before_50_after.npy', 'batt_5_h2co_avged_shocks_20_before_50_after.npy'] # data['H2CO']['file_meas']
+        data[molecule]['file_vac'] = '3.5um_filter_phase_corrected.npy' # data['H2CO']['file_vac']
         
         data[molecule]['wvn2_fit'] = [10000/3.52, 10000/3.50]
         data[molecule]['wvn2_plot'] = [2787,2887]
@@ -108,18 +112,19 @@ for i, molecule in enumerate(molecules_meas):
     if molecule == T_fit_which: data[molecule]['calc_T'] = True # calc T needs to be the first listed in molecules_meas so we do that first
     else: data[molecule]['calc_T'] = False
         
-    data[molecule]['folder_data'] = r'H:\ShockTubeData\DATA_MATT_PATRICK_TRIP_2\\'
-    data[molecule]['folder_vac'] = r'H:\ShockTubeData\DATA_MATT_PATRICK_TRIP_2\vacuum_bckgnd\\' # best for batt5_h2co
+    data[molecule]['folder_data'] = r'H:\ShockTubeData\DATA_MATT_PATRICK_TRIP_2\trioxane\\'
+    data[molecule]['folder_vac'] = r'H:\ShockTubeData\DATA_MATT_PATRICK_TRIP_2\trioxane\vacuum_bckgnd\\' # best for batt5_h2co
+    
     # data[molecule]['folder_vac'] = r'H:\ShockTubeData\DATA_MATT_PATRICK_TRIP_2\vacuum_bckgnd_after_cleaning\\'
     # data[molecule]['folder_vac'] = r'H:\ShockTubeData\DATA_MATT_PATRICK_TRIP_2\vacuum_bckgnd_end_of_experiment\\'
 
     
     #%% -------------------------------------- load data -------------------------------------- 
-
-    # read in the IGs (averaged between shocks, not averaged in time)
-    IG_all = np.load(data[molecule]['folder_data'] + data[molecule]['file_meas']) # use this line for .npy files
-    # IG_all = np.fromfile(data[molecule]['folder']+data[molecule]['file_meas']) # use this line for .bin files (will also need tdo reshape)
-
+    
+    # read in the IGs (averaged between shocks, not averaged in time or between batts) for all files in list, then average the lists together 
+    # IG_all = np.mean(np.array([np.load(data[molecule]['folder_data'] + file) for file in data[molecule]['file_meas']]), axis=0) 
+    IG_all = (np.load(data[molecule]['folder_data'] + data[molecule]['file_meas'][0]) + np.load(data[molecule]['folder_data'] + data[molecule]['file_meas'][1])) /2
+    
     IG_shape = np.shape(IG_all)
     ppIG = IG_shape[-1]
 
@@ -127,8 +132,6 @@ for i, molecule in enumerate(molecules_meas):
 
     print('*************************************************')
     print('****** {} IG shape is {}, ******************'.format(molecule, IG_shape))
-    print('****** which should mean there are ******************')
-    print('****** {} bins with {} IGs in each bin ******************'.format(IG_shape[0], IG_shape[1]))
     print('*************************************************')
     
     # load in the vacuum scan and smooth it
@@ -168,27 +171,29 @@ for i, molecule in enumerate(molecules_meas):
         trans_meas = np.fft.fftshift(np.fft.fft(np.fft.ifftshift(IG_avg))).__abs__()[:i_center+1] / data[molecule]['meas_vac_smooth']
         
         i_fits = td.bandwidth_select_td(data[molecule]['wvn'], data[molecule]['wvn2_fit'], max_prime_factor=50) # wavenumber indices of interest
-        trans_meas = trans_meas[i_fits[0]:i_fits[1]]
+        trans_meas_trim = trans_meas[i_fits[0]:i_fits[1]]
+
+        b, a = signal.butter(forderLP, fcutoffLP)
+        trans_meas_trim_filt = signal.filtfilt(b, a, trans_meas_trim)
+        abs_meas_trim_filt = -np.log(trans_meas_trim_filt)
         
-        data[molecule]['trioxane_ref_coefs'] = trans_meas / PL / hapi.volumeConcentration(1*P_pre, T_pre) # normalize to mimick HITRAN cross section
+        data[molecule]['trioxane_ref_coefs'] = abs_meas_trim_filt / PL / hapi.volumeConcentration(y_trioxane * P_pre, T_pre) # normalize to mimick HITRAN cross section
+        
         
 #%% -------------------------------------- average IGs together as desired (loop it) -------------------------------------- 
 
-
-
-asdfasdfasdf
 # program will loop through them like this (assuming bins_avg = 3, ig_start = 15): 15b1+15b2+15b3, 15b2+15b3+15b4, ..., 15b7+15b8+16b1, 15b8+16b1+16b3, ...
-ig_start_iters = np.arange(ig_start*IG_shape[0], ig_stop*IG_shape[0] - bins_avg+1)[::bins_step]
+ig_start_iters = np.arange(ig_start, ig_stop - ig_avg+2)
 
 fit_results = np.zeros((len(ig_start_iters),1+2*len(fits_plot)*len(molecules_meas))) 
 # data format: [time, fits_plot[0]_molecule_1, fits_plot[0]_unc_molecule_1, fits_plot[1]_molecule_1, ..., fits_plot[0]_molecule_2, fits_plot[0]_unc_molecule_2, ...]
 
 for i_ig, ig_start_iter in enumerate(ig_start_iters): 
     
-    ig_stop_iter = ig_start_iter + bins_avg
+    ig_stop_iter = ig_start_iter + ig_avg
 
     print('*************************************************')
-    print('****** IG start:'+str(ig_start_iter)+ ' IG stop:' + str(ig_stop_iter)+' ******************')
+    print('****** IG start:'+str(ig_start_iter)+ ' IG stop:' + str(ig_stop_iter-1)+' ******************')
     print('*************************************************')
 
     for i_molecule, molecule in enumerate(molecules_meas): 
@@ -248,11 +253,20 @@ for i_ig, ig_start_iter in enumerate(ig_start_iters):
                
         if data[molecule]['calc_T'] is False and T_fit_which is not False: # if we aren't calcuating T this time, but we did already calculate it
             # this gets mad because it needs to fit T for T_fit and then it will come back and list that as the T for the second fit
-            pars['temperature'].value = T_fit # use T_fit_which's temperature (should already be a fixed value)
-            pars['shift'].value = shift_fit # something else to help things along for the weaker absorber
-        
+            
+            if y_min > 0.002: 
+
+                pars['temperature'].value = T_fit # use T_fit_which's temperature (should already be a fixed value)
+                pars['shift'].value = shift_fit # something else to help things along for the weaker absorber
+
+            else: 
+
+                pars['temperature'].set(value = T_pre, vary=False) # we couldn't see T_fit_which, don't use it's temperature
+                pars['pressure'].set(value = P_pre) # we couldn't see T_fit_which, don't use it's temperature
+
         if molecule == 'C3H6O3':
             
+            pars['shift'].set(value=0, vary=False)
             fit = mod.fit(TD_meas_fit, xx = wvn_fit, xx_HITRAN=wvn_fit, coef_HITRAN=data[molecule]['trioxane_ref_coefs'], 
                           weights = weight, params = pars)
             
@@ -263,6 +277,10 @@ for i_ig, ig_start_iter in enumerate(ig_start_iters):
         if molecule == T_fit_which: 
             T_fit = fit.params['temperature'].value # snag this temperature if we'll need it for the next molecule
             y_fit = fit.params['molefraction'].value # snag this concentration to see if we trust the temperature
+            
+            try: y_min = fit.params['molefraction'].value - fit.params['molefraction'].stderr # minimum predicted concentration for t_fit_which (is it even there)
+            except: y_min = fit.params['molefraction'].value - 0.002
+            
             shift_fit = pars['shift'].value
         
         for i_results, which_results in enumerate(fits_plot): 
@@ -272,74 +290,77 @@ for i_ig, ig_start_iter in enumerate(ig_start_iters):
             fit_results[i_ig, 6*i_molecule+2*i_results+2] = fit.params[which_results].stderr
                
 #%% --------------------------------------  save figure as you go so you can make a movie later (#KeepingUpWithPeter) -------------------------------------- 
-           
-        TD_model_fit = fit.best_fit
-        weight = fit.weights
-        # plot frequency-domain fit
-        trans_meas_noBL = np.real(np.fft.rfft(TD_meas_fit - (1-weight) * (TD_meas_fit - TD_model_fit)))
-        trans_model = np.real(np.fft.rfft(TD_model_fit))
-        # plot with residual
-        fig, axs = plt.subplots(2,2, sharex = 'col', sharey = 'row', figsize=(10, 4),
-                                gridspec_kw={'height_ratios': [3,1], 'width_ratios': [3,1], 'hspace':0.015, 'wspace':0.005})
-        
-        # title
-        T_plot = str(int(np.round(fit.params['temperature'].value,0)))
-        y_plot = str(np.round(fit.params['molefraction'].value*100,1)) 
-        P_plot = str(np.round(P,1))
-        ig_avg_location = (ig_start_iter + ig_stop_iter-1)/2/IG_shape[0] - ig_shock # average full IG periodes post shock
-        
+        ig_avg_location = ig_start_iter - ig_shock # (ig_start_iter + ig_stop_iter-1)/2/IG_shape[0] - ig_shock # average full IG periodes post shock\
         fit_results[i_ig, 0] = ig_avg_location/dfrep*1e6
         t_plot = str(int(np.round(fit_results[i_ig, 0])))
+        
+        if plot_fits: 
+        
+            TD_model_fit = fit.best_fit
+            weight = fit.weights
+            # plot frequency-domain fit
+            trans_meas_noBL = np.real(np.fft.rfft(TD_meas_fit - (1-weight) * (TD_meas_fit - TD_model_fit)))
+            trans_model = np.real(np.fft.rfft(TD_model_fit))
+            # plot with residual
+            fig, axs = plt.subplots(2,2, sharex = 'col', sharey = 'row', figsize=(10, 4),
+                                    gridspec_kw={'height_ratios': [3,1], 'width_ratios': [3,1], 'hspace':0.015, 'wspace':0.005})
+            
+            # title
+            T_plot = str(int(np.round(fit.params['temperature'].value,0)))
+            y_plot = str(np.round(fit.params['molefraction'].value*100,1)) 
+            P_plot = str(np.round(P,1))
+                    
+            plt.suptitle('{} at {} K, {} atm, and {}% while averaging {} bins, ~{} us post shock'.format(molecule, T_plot, P_plot, y_plot, ig_avg, t_plot))
+            
+            # fit plot to the right range
+            i_range = td.bandwidth_select_td(wvn_fit, data[molecule]['wvn2_plot'])
+            wvn_plot = wvn_fit[i_range[0]:i_range[1]]
+            wvl_plot = 10000 / wvn_plot
+            trans_meas_noBL = trans_meas_noBL[i_range[0]:i_range[1]]
+            trans_model = trans_model[i_range[0]:i_range[1]]
+            
+            # top left plot - absorbance over wavelength for both model and meas
+            axs[0,0].plot(wvl_plot, trans_meas_noBL, label='meas')
+            axs[0,0].plot(wvl_plot, trans_model, label='model')
+            axs[0,0].legend(loc='upper right')
+            axs[0,0].set_ylabel('Absorbance')
+            
+            if molecule == 'CO': axs[0,0].set_ylim(-0.25, 1.5)
+            elif molecule == 'H2CO': axs[0,0].set_ylim(-0.05, 0.15)
+    
+            # bottom left plot - absorbance over wavelength for both model and meas        
+            axs[1,0].plot(wvl_plot, trans_meas_noBL - trans_model, label='meas-model')
+            axs[1,0].legend(loc='upper right')
+            axs[1,0].set_ylabel('Residual')
+            axs[1,0].set_xlabel('Wavelength (um)')
+            
+            if molecule == 'CO': axs[1,0].set_ylim(-0.15, 0.15)
+            elif molecule == 'H2CO': axs[1,0].set_ylim(-0.15, 0.15)
+                    
+            # top right plot - absorbance over some wavelength for both model and meas
+            axs[0,1].plot(wvl_plot, trans_meas_noBL, label='meas')
+            axs[0,1].plot(wvl_plot, trans_model, label='model')
+            
+            if molecule == 'CO': axs[0,1].set_xlim(4.4809, 4.4868)
+            elif molecule == 'H2CO': axs[0,1].set_xlim(3.539, 3.546)
+               
+            # bottom right plot - absorbance over some wavelength for both model and meas        
+            axs[1,1].plot(wvl_plot, trans_meas_noBL - trans_model, label='meas-model')
+            
+            if save_fits: 
                 
-        plt.suptitle('{} at {} K, {} atm, and {}% while averaging {} bins, ~{} us post shock'.format(molecule, T_plot, P_plot, y_plot, bins_avg, t_plot))
-        
-        # fit plot to the right range
-        i_range = td.bandwidth_select_td(wvn_fit, data[molecule]['wvn2_plot'])
-        wvn_plot = wvn_fit[i_range[0]:i_range[1]]
-        wvl_plot = 10000 / wvn_plot
-        trans_meas_noBL = trans_meas_noBL[i_range[0]:i_range[1]]
-        trans_model = trans_model[i_range[0]:i_range[1]]
-        
-        # top left plot - absorbance over wavelength for both model and meas
-        axs[0,0].plot(wvl_plot, trans_meas_noBL, label='meas')
-        axs[0,0].plot(wvl_plot, trans_model, label='model')
-        axs[0,0].legend(loc='upper right')
-        axs[0,0].set_ylabel('Absorbance')
-        
-        if molecule == 'CO': axs[0,0].set_ylim(-0.25, 1.5)
-        elif molecule == 'H2CO': axs[0,0].set_ylim(-0.05, 0.15)
+                plt.savefig(os.path.abspath('')+r'\plots\fitting {} using T_{} while averaging {} IGs starting with IG {}.jpg'.format(
+                    molecule, T_fit_which, ig_avg, ig_start_iter), bbox_inches='tight')
+            
+            plt.close()
 
-        # bottom left plot - absorbance over wavelength for both model and meas        
-        axs[1,0].plot(wvl_plot, trans_meas_noBL - trans_model, label='meas-model')
-        axs[1,0].legend(loc='upper right')
-        axs[1,0].set_ylabel('Residual')
-        axs[1,0].set_xlabel('Wavelength (um)')
-        
-        if molecule == 'CO': axs[1,0].set_ylim(-0.15, 0.15)
-        elif molecule == 'H2CO': axs[1,0].set_ylim(-0.15, 0.15)
-                
-        # top right plot - absorbance over some wavelength for both model and meas
-        axs[0,1].plot(wvl_plot, trans_meas_noBL, label='meas')
-        axs[0,1].plot(wvl_plot, trans_model, label='model')
-        
-        if molecule == 'CO': axs[0,1].set_xlim(4.4809, 4.4868)
-        elif molecule == 'H2CO': axs[0,1].set_xlim(3.539, 3.546)
-           
-        # bottom right plot - absorbance over some wavelength for both model and meas        
-        axs[1,1].plot(wvl_plot, trans_meas_noBL - trans_model, label='meas-model')
-        
         if save_fits: 
             
-            plt.savefig(os.path.abspath('')+r'\plots\fitting {} using T_{} while averaging {} bins starting with IG x bin = {}.jpg'.format(
-                molecule, T_fit_which, bins_avg, ig_start_iter), bbox_inches='tight')
-
-            np.save(os.path.abspath('')+r'\plots\fit results using T_{} while averaging {} bins'.format(T_fit_which, bins_avg), fit_results)
-
-        plt.close()
+            np.save(os.path.abspath('')+r'\plots\fit results using T_{} while averaging {} IGs'.format(T_fit_which, ig_avg), fit_results)
         
 #%% -------------------------------------- plot the fit results with error bars -------------------------------------- 
 
-fit_results = np.load(os.path.abspath('')+r'\plots\fit results using T_{} while averaging {} bins.npy'.format(T_fit_which, bins_avg))
+fit_results = np.load(os.path.abspath('')+r'\plots\fit results using T_{} while averaging {} IGs.npy'.format(T_fit_which, ig_avg))
 
 # fit_results = fit_results[fit_results[0,:] != 0,:]
 
@@ -348,7 +369,7 @@ x_offset = 0.15
 for i_results, which_results in enumerate(fits_plot): 
 
     plt.figure(figsize=(6, 4), dpi=200, facecolor='w', edgecolor='k')
-    plt.title('T_{} while averaging {} bins.npy'.format(T_fit_which, bins_avg)) 
+    plt.title('T_{} while averaging {} IGs.npy'.format(T_fit_which, ig_avg)) 
 
     for i_molecule, molecule in enumerate(molecules_meas): 
     
@@ -362,10 +383,14 @@ for i_results, which_results in enumerate(fits_plot):
         
         plot_y = fit_results[:, 6*i_molecule+2*i_results+1]
         plot_y_unc = fit_results[:, 6*i_molecule+2*i_results+2]
-                       
+        
+        if molecule == 'C3H6O3' and i_results == 1: 
+            plot_y = plot_y/9
+            plot_y_unc = plot_y_unc/9
+             
         plt.errorbar(plot_x, plot_y, yerr=plot_y_unc, color='k', ls='none', zorder=1)
-        plt.plot(plot_x, plot_y, marker='x', label='{} over {} bins'.format(molecule, bins_avg) , zorder=2)
-            
+        plt.plot(plot_x, plot_y, marker='x', label='{} over {} IGs'.format(molecule, ig_avg) , zorder=2)
+        
         
     plt.xlabel('Time Post Shock (us)')
     plt.ylabel('{}'.format(which_results))
