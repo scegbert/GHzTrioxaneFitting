@@ -43,9 +43,9 @@ ig_stop = 49 # assume the process has completed itself by ig_stop
 ig_avg = 1 # how many to average together
 
 ig_inc_shock = 19.5 # average location of the incident shock (this is what the data is clocked off of)
-t_inc2ref_shock = 35 # time between incident and reflected shock
+t_inc2ref_shock = 35 # time between incident and reflected shock in microseconds
 
-molecules_meas = ['CO', 'H2CO', 'C3H6O3']
+molecules_meas = ['CO'] # ['CO', 'H2CO', 'C3H6O3']
 
 fits_plot = ['temperature', 'molefraction','shift']
 if fit_pressure: fits_plot.append('pressure') # if we're fitting it, you probably want to save it
@@ -73,6 +73,15 @@ T_all = [1400, 1600, 1800]  # temperature in K
 T_which = 0 # which of the T's above are we measuring? (feeds guesses for model of T and y)
 T = T_all[T_which]
 
+# load time resolved pressure data
+Pressure_data = np.loadtxt(r"H:\ShockTubeData\DATA_MATT_PATRICK_TRIP_1\Averaged Pressure Profile_surf_27,28.csv", delimiter=',')
+Pressure_data_P = Pressure_data[:,1] / 1.013 # convert from bar to ATM
+Pressure_data_t = Pressure_data[:,0]
+
+Pressure_data_P_smooth = Pressure_data_P.copy() # smooth out the ringing in the pressure sensor
+b, a = signal.butter(forderLP, fcutoffLP)
+Pressure_data_P_smooth[np.argmin(abs(Pressure_data_t))+1:] = signal.filtfilt(b, a, Pressure_data_P[np.argmin(abs(Pressure_data_t))+1:])
+
 #%% -------------------------------------- start dict that will hold data for the different molecules -------------------------------------- 
 
 data = {}
@@ -83,10 +92,13 @@ for i, molecule in enumerate(molecules_meas):
     data[molecule] = {}
     
     if molecule == 'CO': 
-        data[molecule]['file_meas'] = ['batt_4_co_avged_shocks_20_before_50_after.npy', 'batt_5_co_avged_shocks_20_before_50_after.npy'] # should be list
-        data[molecule]['file_vac'] = '4.5um_filter_phase_corrected.npy'
-        
-        
+        data[molecule]['file_meas'] = ['co_surf_27_and_28_avged_across_shocks_50x17507.bin'] # should be list
+        data[molecule]['file_vac'] = 'co_vacuum_background.bin'
+
+        # data[molecule]['file_meas'] = ['batt_4_co_avged_shocks_20_before_50_after.npy',
+        #                                'batt_5_co_avged_shocks_20_before_50_after.npy']  # should be list
+        # data[molecule]['file_vac'] = '4.5um_filter_phase_corrected.npy'
+
         data[molecule]['wvn2_fit'] = [10000/4.62, 10000/4.40]
         data[molecule]['wvn2_plot'] = [2187,2240]
         data[molecule]['molecule_ids'] = 5
@@ -97,7 +109,7 @@ for i, molecule in enumerate(molecules_meas):
     elif molecule == 'H2CO': 
         data[molecule]['file_meas'] = ['batt_4_h2co_avged_shocks_20_before_50_after.npy', 'batt_5_h2co_avged_shocks_20_before_50_after.npy']
         data[molecule]['file_vac'] = '3.5um_filter_phase_corrected.npy'
-        
+
         data[molecule]['wvn2_fit'] = [10000/3.59, 10000/3.44]
         data[molecule]['wvn2_plot'] = [2787,2887]
         data[molecule]['molecule_ids'] = 20
@@ -107,7 +119,7 @@ for i, molecule in enumerate(molecules_meas):
     elif molecule == 'C3H6O3': 
         data[molecule]['file_meas'] = ['batt_4_h2co_avged_shocks_20_before_50_after.npy', 'batt_5_h2co_avged_shocks_20_before_50_after.npy'] # data['H2CO']['file_meas']
         data[molecule]['file_vac'] = '3.5um_filter_phase_corrected.npy' # data['H2CO']['file_vac']
-        
+
         data[molecule]['wvn2_fit'] = [10000/3.52, 10000/3.50]
         data[molecule]['wvn2_plot'] = [2787,2887]
                 
@@ -197,6 +209,13 @@ for i_ig, ig_start_iter in enumerate(ig_start_iters):
     print('*************************************************')
     print('****** IG start:'+str(ig_start_iter)+ ' IG stop:' + str(ig_stop_iter-1)+' ******************')
     print('*************************************************')
+
+    ig_avg_location = (ig_start_iter + ig_stop_iter - 1) / 2 - ig_inc_shock  # average full IG periodes post shock
+    t_processing = ig_avg_location / dfrep * 1e6 - t_inc2ref_shock  # time referenced to the reflected Shock
+    fit_results[i_ig, 0] = t_processing
+
+    Pressure_data_P_smooth[np.argmin(abs(Pressure_data_t-t_processing))]
+
 
     for i_molecule, molecule in enumerate(molecules_meas): 
         
@@ -292,10 +311,9 @@ for i_ig, ig_start_iter in enumerate(ig_start_iters):
             fit_results[i_ig, 6*i_molecule+2*i_results+2] = fit.params[which_results].stderr
                
 #%% --------------------------------------  save figure as you go so you can make a movie later (#KeepingUpWithPeter) -------------------------------------- 
-        ig_avg_location = (ig_start_iter + ig_stop_iter-1)/2 - ig_inc_shock # average full IG periodes post shock\
-        fit_results[i_ig, 0] = ig_avg_location/dfrep*1e6 - t_inc2ref_shock # time referenced to the reflected shock wave
-        t_plot = str(int(np.round(fit_results[i_ig, 0])))
-                
+
+
+
         if plot_fits: 
         
             TD_model_fit = fit.best_fit
@@ -308,6 +326,7 @@ for i_ig, ig_start_iter in enumerate(ig_start_iters):
                                     gridspec_kw={'height_ratios': [3,1], 'width_ratios': [3,1], 'hspace':0.015, 'wspace':0.005})
             
             # title
+            t_plot = str(int(np.round(t_processing)))
             T_plot = str(int(np.round(fit.params['temperature'].value,0)))
             y_plot = str(np.round(fit.params['molefraction'].value*100,1)) 
             P_plot = str(np.round(P,1))
@@ -351,8 +370,8 @@ for i_ig, ig_start_iter in enumerate(ig_start_iters):
             
             if save_fits: 
                 
-                plt.savefig(os.path.abspath('')+r'\plots\fitting {} using T_{} while averaging {} IGs starting with IG {}.jpg'.format(
-                    molecule, T_fit_which, ig_avg, ig_start_iter), bbox_inches='tight')
+                plt.savefig(os.path.abspath('')+r'\plots\fitting {} using T_{} at P={} while averaging {} IGs starting with IG {}.jpg'.format(
+                    molecule, T_fit_which, P_plot, ig_avg, ig_start_iter), bbox_inches='tight')
             
             plt.close()
 
