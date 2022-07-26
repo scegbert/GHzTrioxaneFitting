@@ -63,7 +63,7 @@ H_precursor = False
 #%% -------------------------------------- generally applicable model conditions -------------------------------------- 
 
 T_pre = 300 # temperature in K before the shock (for scaling trioxane measurement)
-P_pre = 0.1 # pressure in atm before the shock (for scaling trioxane measurement)
+P_pre = 0.44 # pressure in atm before the shock (for scaling trioxane measurement)
 y_trioxane = 0.037/3 # guess at trioxane concentration (number doesn't matter, just for scaling)
 
 P = 5.0 # pressure in atm after shock (currently assuming constant P)
