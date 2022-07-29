@@ -35,7 +35,7 @@ files = ["CO_299x70x15046.npy",  # 9
          "CO_70x70x15046.npy",  # 17
          "CO_429x70x15046.npy"]  # 18
 
-folders = [r"H:\ShockTubeData\DATA_MATT_PATRICK_TRIP_2\CO\06-21-22\PHASE_CORRECTED_DATA\battalion_9\\", 
+folders = [r"H:\ShockTubeData\DATA_MATT_PATRICK_TRIP_2\CO\06-21-22\PHASE_CORRECTED_DATA\battalion_9\\",  
            r"H:\ShockTubeData\DATA_MATT_PATRICK_TRIP_2\CO\06-21-22\PHASE_CORRECTED_DATA\battalion_10\\", 
            r"H:\ShockTubeData\DATA_MATT_PATRICK_TRIP_2\CO\06-21-22\PHASE_CORRECTED_DATA\battalion_16\\", 
            r"H:\ShockTubeData\DATA_MATT_PATRICK_TRIP_2\CO\06-21-22\PHASE_CORRECTED_DATA\battalion_21\\",
