@@ -163,7 +163,7 @@ for i, molecule in enumerate(molecules_meas):
     
     b, a = signal.butter(forderLP, fcutoffLP)
     data[molecule]['meas_vac_smooth'] = signal.filtfilt(b, a, data[molecule]['meas_vac'])
-                
+I=                
     #%% -------------------------------------- setup wavenumber axis based on lock conditions -------------------------------------- 
 
     wvn_target = np.mean(data[molecule]['wvn2_fit']) # a wavenumber we know is in our range
