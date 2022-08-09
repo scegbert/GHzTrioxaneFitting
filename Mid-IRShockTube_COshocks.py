@@ -28,15 +28,16 @@ pld.db_begin('linelists')
 
 f_counter_n = 10007604.8 # nominal near 10 MHz reading of the counter
 
-fit_pressure = False # <--------------- use wisely, probably need to update CO for argon broadening first 
+fit_pressure = True # <--------------- use wisely, probably need to update CO for argon broadening first 
 time_resolved_pressure = True
+co_argon_database = True
 
-fit_concentration = False
+fit_concentration = True
 
 data_folder = r"H:\ShockTubeData\DATA_MATT_PATRICK_TRIP_2\CO\averaged CO shock tube data\\"
 
-plot_fits = True
-save_fits = True
+plot_fits = False
+save_fits = False
 
 ig_start = 0 # start processing IG's at #ig_start
 ig_stop = 69 # assume the process has completed itself by ig_stop 
@@ -57,25 +58,24 @@ baseline_TD_stop = 0 # 0 is none, high numbers start removing high noise datapoi
 
 #%% -------------------------------------- load and smooth the vacuum scan -------------------------------------- 
 
-# IG_vac = np.load(data_folder + 'vac.npy')
+files_vac = ['vacuum_background_21.npy', 'vacuum_background_23.npy']
+trans_vacs_smooth = [None] * len(files_vac)
 
-# load in the vacuum scan and smooth it
-# data[molecule]['IG_vac'] = np.load(data[molecule]['folder_vac']+data[molecule]['file_vac'])
-# data[molecule]['IG_vac'] = np.fromfile(data[molecule]['folder_vac']+data[molecule]['file_vac'])
+for i_file, file in enumerate(files_vac):
 
-# i_center = int((len(data[molecule]['IG_vac'])-1)/2)
-# data[molecule]['meas_vac'] = np.fft.fftshift(np.fft.fft(np.fft.ifftshift(data[molecule]['IG_vac']))).__abs__()[:i_center+1] # fft and remove reflected portion
-
-# b, a = signal.butter(forderLP, fcutoffLP)
-# data[molecule]['meas_vac_smooth'] = signal.filtfilt(b, a, data[molecule]['meas_vac'])
-
-meas_vac_smooth = np.ones(7523)
-ppIG = 15046
+    IG_vac = np.load(data_folder + file)
+    ppIG = len(IG_vac)
+    
+    i_center = int((ppIG-1)/2) + 1
+    trans_vac = np.fft.fftshift(np.fft.fft(np.fft.ifftshift(IG_vac))).__abs__()[i_center:] # fft and remove reflected portion
+    
+    b, a = signal.butter(forderLP, fcutoffLP)
+    trans_vacs_smooth[i_file] = signal.filtfilt(b, a, trans_vac)
 
 #%% -------------------------------------- setup wavenumber axis based on lock conditions -------------------------------------- 
 
-wvn_target = 2100 # a wavenumber we know is in our range
-wvn2_fit = [2095, 2235]
+wvn_target = 2175 # a wavenumber we know is in our range
+wvn2_fit = [2145, 2200] # [2100, 2230]
 
 hz2cm = 1 / speed_of_light / 100
 
@@ -90,9 +90,8 @@ nyq_num = np.floor((wvn_target/hz2cm) / nyq_span).astype(int)
 
 nyq_start = nyq_num * nyq_span
 nyq_stop = nyq_start + nyq_span
-wvn = np.arange(nyq_start, nyq_stop, favg)[:-1] * hz2cm # convert from Hz to cm-1
+wvn = np.arange(nyq_start, nyq_stop, favg)[1:] * hz2cm # convert from Hz to cm-1, remove last point so things match
 wvl = 10000 / wvn
-
 
 #%% -------------------------------------- generally applicable model conditions -------------------------------------- 
 
@@ -108,6 +107,8 @@ P_pre = 0.44 # pressure in atm before the shock (for scaling trioxane measuremen
 T_all =           [ 1200,   1200,  1200,  1500,  1820,  1200,      1200,    1500,    1820]  # temperature in K
 meas_file_names = ['1Ar', '1ArL', '2Ar', '3Ar', '4Ar', '1ArHe', '2ArHe', '3ArHe', '4ArHe']
 
+if co_argon_database: database_str = 'CO-Ar'
+else: database_str = 'CO-air'
 
 #%% -------------------------------------- setup for given file and load measurement data -------------------------------------- 
 
@@ -115,8 +116,10 @@ fit_results = {}
 
 for i_file, meas_file in enumerate(meas_file_names): 
 
-    T = T_all[i_file]
-    # P = P_all[i_file]
+    
+    i_vac = 0
+    # if i_file in [1, 5,6,7,8]: i_vac = 0
+    # else: i_vac = 1
     
     # load time resolved pressure data
     pressure_data = np.loadtxt(r"H:\ShockTubeData\DATA_MATT_PATRICK_TRIP_2\CO\averaged CO shock tube data\Averaged Pressure Profile {}.csv".format(meas_file), delimiter=',')
@@ -141,12 +144,19 @@ for i_file, meas_file in enumerate(meas_file_names):
         ig_stop_iter = ig_start_iter + ig_avg
     
         print('*************************************************')
+        print('****************** ' + meas_file + ' ******************')
         print('****** IG start:'+str(ig_start_iter)+ ' IG stop:' + str(ig_stop_iter-1)+' ******************')
         print('*************************************************')
     
         ig_avg_location = (ig_start_iter + ig_stop_iter - 1) / 2 - ig_inc_shock  # average full IG periodes post shock
         t_processing = ig_avg_location / dfrep * 1e6 - t_inc2ref_shock  # time referenced to the reflected Shock
         fit_results[meas_file][i_ig, 0] = t_processing
+
+        if t_processing < 0: 
+            T = T_pre # pre vs post shock temperature
+        else: 
+            T = T_all[i_file]
+
         
         if time_resolved_pressure: # if we want time resolved pressure
             P = pressure_data_P_smooth[np.argmin(abs(pressure_data_t-t_processing))] 
@@ -154,18 +164,17 @@ for i_file, meas_file in enumerate(meas_file_names):
         # average IGs together
         IG_avg = np.mean(IG_all[ig_start_iter:ig_stop_iter,:],axis=0)
         
-        meas_avg = np.fft.fftshift(np.fft.fft(np.fft.ifftshift(IG_avg))).__abs__()
-        i_center = int((len(meas_avg)-1)/2)
-        meas_avg = meas_avg[:i_center+1] # remove reflected portion
+        meas_avg = np.fft.fftshift(np.fft.fft(np.fft.ifftshift(IG_avg))).__abs__()[i_center:] # FFT and remove reflected portion
         
         # divide by vacuum to mostly normalize things
-        trans_meas = meas_avg / meas_vac_smooth
+        trans_meas = meas_avg / trans_vacs_smooth[i_vac]
         
         # normalize max value to 1 (ish)
         i_target = np.argmin(abs(wvn-wvn_target))
-        trans_meas = trans_meas / max(trans_meas[i_target-500:i_target+500])
+        trans_meas = trans_meas / max(trans_meas[i_target-50:i_target+50])
 
-        trans_meas = trans_meas[::-1] #<------ flip to agree with nyquist window 
+        trans_meas = trans_meas
+        
         
 #%% -------------------------------------- setup the model - re-initialize every time -------------------------------------- 
        
@@ -176,12 +185,7 @@ for i_file, meas_file in enumerate(meas_file_names):
                                      
         pars['pathlength'].set(value = PL, vary = False)
         pars['pressure'].set(value = P + P*np.random.rand()/1000, vary = fit_pressure)
-        
-        if t_processing < 0: 
-            pars['temperature'].set(value = T_pre + T*np.random.rand()/1000, vary = True, min=250, max=3000)
-        else:
-            pars['temperature'].set(value = T + T*np.random.rand()/1000, vary = True, min=250, max=3000)
-        
+        pars['temperature'].set(value = T + T*np.random.rand()/1000, vary = True, min=250, max=3000)        
         pars['molefraction'].set(value = y_CO + y_CO*np.random.rand()/1000, vary = fit_concentration)
         
 #%% -------------------------------------- trim to size and fit the spectrum -------------------------------------- 
@@ -196,15 +200,20 @@ for i_file, meas_file in enumerate(meas_file_names):
         
         TD_model_expected = mod.eval(xx=wvn_fit, params=pars, name=molecule_name)
         abs_model_expected = np.real(np.fft.rfft(TD_model_expected))
-        
-        fit = mod.fit(TD_meas_fit, xx = wvn_fit, params = pars, weights = weight, name=molecule_name)
+        trans_model_expected = np.exp(-abs_model_expected)
+    
+        if co_argon_database: 
+            print('**********   using modified code to look at CO-Ar database!!!!   **********')
+            fit = mod.fit(TD_meas_fit, xx = wvn_fit, params = pars, weights = weight, name=molecule_name + '_Ar')
+        else: 
+            fit = mod.fit(TD_meas_fit, xx = wvn_fit, params = pars, weights = weight, name=molecule_name)
         
         for i_results, which_results in enumerate(fits_plot): 
             
             # save some fit results and errors for plotting later
             fit_results[meas_file][i_ig, 2*i_results+1] = fit.params[which_results].value
             fit_results[meas_file][i_ig, 2*i_results+2] = fit.params[which_results].stderr
-               
+            
 #%% --------------------------------------  save figure as you go so you can make a movie later (#KeepingUpWithPeter) -------------------------------------- 
 
         if plot_fits: 
@@ -226,8 +235,10 @@ for i_file, meas_file in enumerate(meas_file_names):
             T_plot = str(int(np.round(fit.params['temperature'].value,0)))
             y_plot = str(np.round(fit.params['molefraction'].value*100,1)) 
             P_plot = str(np.round(fit.params['pressure'].value,1))
+            shift_plot = str(np.round(fit.params['shift'].value,4))
             
-            plot_title = '{} at {} K and {} atm while averaging {} IGs ~{} us post shock'.format(meas_file, T_plot, P_plot, y_plot, ig_avg, t_plot)
+            plot_title = '{} using {} while averaging {} IGs at IG {} T={}K P={}atm'.format(
+                meas_file, database_str, ig_avg, ig_start_iter, T_plot, P_plot)
             
             plt.suptitle(plot_title)
             
@@ -252,7 +263,7 @@ for i_file, meas_file in enumerate(meas_file_names):
             # top second plot - absorbance over some wavelength for both model and meas
             axs[0,1].plot(wvl_plot, abs_meas_noBL, label='meas')
             axs[0,1].plot(wvl_plot, abs_model, label='model')
-            axs[0,1].set_xlim(4.4809, 4.4868)
+            axs[0,1].set_xlim(4.482, 4.4862)
                
             # bottom second plot - absorbance over some wavelength for both model and meas        
             axs[1,1].plot(wvl_plot, abs_meas_noBL - abs_model, label='meas-model')
@@ -264,101 +275,72 @@ for i_file, meas_file in enumerate(meas_file_names):
             # top third plot - absorbance over some wavelength for both model and meas
             axs[0,2].plot(wvl_plot, abs_meas_noBL, label='meas')
             axs[0,2].plot(wvl_plot, abs_model, label='model')
-            axs[0,2].set_xlim(4.4809, 4.4868)
+            axs[0,2].set_xlim(4.5177, 4.5288)
                
             # bottom third plot - absorbance over some wavelength for both model and meas        
             axs[1,2].plot(wvl_plot, abs_meas_noBL - abs_model, label='meas-model')
-            
-            
-            
+            axs[1,2].set_xlabel('Wavelength (um)')
             
             # top fourth plot - absorbance over some wavelength for both model and meas
             axs[0,3].plot(wvl_plot, abs_meas_noBL, label='meas')
             axs[0,3].plot(wvl_plot, abs_model, label='model')
-            axs[0,3].set_xlim(4.4809, 4.4868)
+            axs[0,3].set_xlim(4.5485, 4.5560)
                
             # bottom fourth plot - absorbance over some wavelength for both model and meas        
             axs[1,3].plot(wvl_plot, abs_meas_noBL - abs_model, label='meas-model')
-            
-            
-            asdfasdfsd
             
             if save_fits: 
                 
                 plt.savefig(os.path.abspath('')+r'\plots\{}.png'.format(plot_title), bbox_inches='tight')
             
-            # plt.close()
+            plt.close()
 
-        # if save_fits: 
+        if save_fits: 
             
-        #     np.save(os.path.abspath('')+r'\plots\fit results using T_{} while averaging {} IGs'.format(T_fit_which, ig_avg), fit_results)
+            np.save(os.path.abspath('')+r'\plots\fit results for CO shocks while averaging {} IGs using {}.npy'.format(ig_avg, database_str), fit_results)
                 
 #%% -------------------------------------- plot the fit results with error bars -------------------------------------- 
 
 # fit_results = np.load(os.path.abspath('')+r'\plots\fit results using T_{} while averaging {} IGs.npy'.format(T_fit_which, ig_avg))
 
-# fit_results = fit_results[fit_results[0,:] != 0,:]
-
 x_offset = 0.15
 
-name = ['P = 5', 'P = 6', 'P(t)', 'P_optical']
 i_molecule = 0
 
 
 for i_results, which_results in enumerate(fits_plot): 
 
     plt.figure(figsize=(6, 4), dpi=200, facecolor='w', edgecolor='k')
-    plt.title('T_{} while averaging {} IGs.npy'.format(T_fit_which, ig_avg)) 
+    plt.title('{} while averaging {} IGs.npy'.format(meas_file, ig_avg)) 
 
-    for i_fit, fit_results in enumerate([fit_results5, fit_results6, fit_results_t, fit_results_f]): 
-    # for i_molecule, molecule in enumerate(molecules_meas): 
-    
-        # for bin_avg in [1,3,6]: 
-            
-        #     if bin_avg == 1: fit_results = fit_results1CO
-        #     elif bin_avg == 3: fit_results = fit_results3CO
-        #     elif bin_avg ==6: fit_results = fit_results6CO
-            
-        plot_x = fit_results[:,0] + x_offset*i_molecule
+    for meas_file in fit_results.keys(): 
         
-        if i_fit == 0 and which_results == 'pressure': 
-            plot_y = np.ones_like(plot_x) * 5.0
-            plot_y_unc = np.zeros_like(plot_x)
+        plot_x = fit_results[meas_file][:,0] + x_offset*i_molecule
         
-        elif i_fit == 1 and which_results == 'pressure': 
-            plot_y = np.ones_like(plot_x) * 6.0
-            plot_y_unc = np.zeros_like(plot_x)
-        
-        else: 
-            plot_y = fit_results[:, 6*i_molecule+2*i_results+1]
-            plot_y_unc = fit_results[:, 6*i_molecule+2*i_results+2]
-        
-        if molecule == 'C3H6O3' and i_results == 1: 
-            plot_y = plot_y/9
-            plot_y_unc = plot_y_unc/9
-             
+        plot_y = fit_results[meas_file][:, 6*i_molecule+2*i_results+1]
+        plot_y_unc = fit_results[meas_file][:, 6*i_molecule+2*i_results+2]
+                 
         plt.errorbar(plot_x, plot_y, yerr=plot_y_unc, color='k', ls='none', zorder=1)
         # plt.plot(plot_x, plot_y, marker='x', label='{} over {} IGs'.format(molecule, ig_avg) , zorder=2)
-        plt.plot(plot_x, plot_y, marker='x', label=name[i_fit] , zorder=2)
-        
+        plt.plot(plot_x, plot_y, marker='x', label=meas_file , zorder=2)
         
     plt.xlabel('Time Post Shock (us)')
     plt.ylabel('{}'.format(which_results))
     
     plt.legend(loc='lower right')
     
-        
     
-plt.figure()    
-plt.plot(TD_meas_fit)
-plt.plot(TD_model_expected)
+    
+# plt.figure()    
+# plt.plot(TD_meas_fit)
+# plt.plot(TD_model_expected)
 
     
     
-plt.figure()    
-plt.plot(wvl_plot, abs_meas_noBL, label='meas', linewidth=5)
-plt.plot(wvl_plot, abs_model, label='model')
-plt.plot(wvl_plot, abs_model_expected, label='predicted')
+# plt.figure()    
+# plt.plot(wvl_plot, abs_meas_noBL, label='meas', linewidth=5)
+# plt.plot(wvl_plot, abs_model, label='model')
+# plt.plot(wvl_plot, abs_model_expected, label='predicted')
 
 
         
