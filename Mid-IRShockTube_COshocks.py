@@ -36,12 +36,12 @@ fit_concentration = True
 
 data_folder = r"H:\ShockTubeData\DATA_MATT_PATRICK_TRIP_2\CO\averaged CO shock tube data\\"
 
-plot_fits = False
-save_fits = False
+plot_fits = True
+save_fits = True
 
 ig_start = 0 # start processing IG's at #ig_start
 ig_stop = 69 # assume the process has completed itself by ig_stop 
-ig_avg = 1 # how many to average together
+ig_avg = 2 # how many to average together
 
 ig_inc_shock = 19.5 # average location of the incident shock (this is what the data is clocked off of)
 t_inc2ref_shock = 35 # time between incident and reflected shock in microseconds

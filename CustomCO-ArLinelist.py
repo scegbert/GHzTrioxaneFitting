@@ -150,17 +150,16 @@ gamma_air_Sung_fit = gamma_Sung_air(m_fit_air, parameters_air_Sung[0], parameter
 
 gamma_air_Sung = gamma_Sung_air(m_fit_air, 0.6717, 0.0381, 8)
 
-#%% -------------------------------------- larger Pade approximation fit  -------------------------------------- 
+#%% -------------------------------------- fit pade to HITRAN shift for 2->1 transition (smoother) -------------------------------------- 
 
 
-parameters_air_Pade, _ = curve_fit(Pade_22, df_CO.quanta_m,  df_CO.gamma_air)
-gamma_air_Pade_fit = Pade_22(m_fit_air, *parameters_air_Pade)
+df_CO_delta = df_CO[(df_CO.quanta_branch=='R') & (df_CO.quanta_m>=19) & (df_CO.quanta_UL==21)]
 
+parameters_delta_air_Pade_22, _ = curve_fit(Pade_22, df_CO_delta.quanta_m,  df_CO_delta.delta_air)
+delta_air_Pade_22 = Pade_22(df_CO_delta.quanta_m, *parameters_delta_air_Pade_22)
 
-#%% -------------------------------------- simple polynomial fit of HITRAN data  -------------------------------------- 
+plt.plot(df_CO_delta.quanta_m, delta_air_Pade_22)
 
-parameters_air_poly = np.polyfit(abs(df_CO.quanta_m),  df_CO.gamma_air, 2)
-gamma_air_poly_fit = np.poly1d(parameters_air_poly)(m_fit_air)
 
 
 #%% -------------------------------------- air plots -------------------------------------- 
@@ -518,9 +517,10 @@ df_Ar_HITRAN.n_air = Pade_23(df_Ar_HITRAN.quanta_m_abs, *n_parameters_Ar_Pade_23
 df_Ar_HITRAN.loc[(df_Ar_HITRAN.quanta_branch=='R') & (df_Ar_HITRAN.quanta_m<20), 'delta_air'] = np.poly1d(
     delta_parameters_Ar_poly2R)(df_Ar_HITRAN[(df_Ar_HITRAN.quanta_branch=='R') & (df_Ar_HITRAN.quanta_m<20)].quanta_m)
 
-# HITRAN 2->1 seems like a good fit for 0->1 Argon for m>20
-df_Ar_HITRAN.loc[(df_Ar_HITRAN.quanta_branch=='R') & (df_Ar_HITRAN.quanta_m>=20) & (df_Ar_HITRAN.quanta_UL==10), 'delta_air'] = \
-    df_Ar_HITRAN[(df_Ar_HITRAN.quanta_branch=='R') & (df_Ar_HITRAN.quanta_m>=20) & (df_Ar_HITRAN.quanta_UL==21)].delta_air
+
+df_Ar_HITRAN.loc[(df_Ar_HITRAN.quanta_branch=='R') & (df_Ar_HITRAN.quanta_m>=20) & (df_Ar_HITRAN.quanta_UL==10), 'delta_air'] = Pade_22(
+    df_Ar_HITRAN[(df_Ar_HITRAN.quanta_branch=='R') & (df_Ar_HITRAN.quanta_m>=20) & (df_Ar_HITRAN.quanta_UL==10)].quanta_m, *parameters_delta_air_Pade_22)
+
 
 df_Ar_HITRAN.loc[df_Ar_HITRAN.quanta_branch=='P', 'delta_air'] = const_then_slope(df_Ar_HITRAN[df_Ar_HITRAN.quanta_branch=='P'].quanta_m, *delta_parameters_Ar_CtSP)
 
