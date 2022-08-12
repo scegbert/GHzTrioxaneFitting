@@ -42,9 +42,9 @@ data_folder = r"H:\ShockTubeData\DATA_MATT_PATRICK_TRIP_2\CO\averaged CO shock t
 plot_fits = False
 save_fits = False
 
-ig_start = 20 # start processing IG's at #ig_start
+ig_start = 0 # start processing IG's at #ig_start
 ig_stop = 69 # assume the process has completed itself by ig_stop 
-ig_avg = 10 # how many to average together
+ig_avg = 1 # how many to average together
 
 ig_inc_shock = 19.5 # average location of the incident shock (this is what the data is clocked off of)
 t_inc2ref_shock = 35 # time between incident and reflected shock in microseconds
@@ -113,15 +113,28 @@ P_pre = 0.44 # pressure in atm before the shock (for scaling trioxane measuremen
 T_all =           [ 1200,   1200,  1200,  1500,  1820,  1200,      1200,    1500,    1820]  # temperature in K
 meas_file_names = ['1Ar', '1ArL', '2Ar', '3Ar', '4Ar', '1ArHe', '2ArHe', '3ArHe', '4ArHe']
 
-#%% -------------------------------------- load model -------------------------------------- 
+#%% -------------------------------------- load HITRAN model -------------------------------------- 
 
 df_CO = db.par_to_df(os.path.abspath('') + r'\linelists\\' + molecule_name + '.data')
 
 df_CO = df_CO[(df_CO.nu > wvn2_fit[0]) & (df_CO.nu < wvn2_fit[1])]
 df_CO = df_CO[df_CO.quanta.str.split(expand=True)[0] == '1'] # only looking at fundametal transitions for now
 
-#%% -------------------------------------- setup for given file and load measurement data -------------------------------------- 
+nu_delta = df_CO.nu.to_list()[1] - df_CO.nu.to_list()[0] # spacing between features
 
+#%% -------------------------------------- setup model to fit features -------------------------------------- 
+
+# def Gaussian(x, x0, A, w, zerolevel):
+#     return A* np.exp(-(x-x0)**2 / 2 / w**2) + zerolevel
+
+def Lorentzian(x, x0, A, w, zerolevel):
+    return A* w / ((x-x0)**2 + (w/2)**2) + zerolevel
+
+parameter_names = ['x0', 'A', 'w', 'zerolevel']
+
+
+#%% -------------------------------------- setup for given file and load measurement data --------------------------------------   
+    
 fit_results = {}
 
 for i_file, meas_file in enumerate(meas_file_names): 
@@ -144,8 +157,12 @@ for i_file, meas_file in enumerate(meas_file_names):
     
     # program will loop through them like this (assuming bins_avg = 3, ig_start = 15): 15b1+15b2+15b3, 15b2+15b3+15b4, ..., 15b7+15b8+16b1, 15b8+16b1+16b3, ...
     ig_start_iters = np.arange(ig_start, ig_stop - ig_avg+2)
+        
+    fit_results[meas_file] = {}
     
-    fit_results[meas_file] = np.zeros((len(ig_start_iters),1+2*len(fits_plot))) 
+    for feature_index, nu_center in df_CO.nu.iteritems():
+    
+        fit_results[meas_file][''.join(df_CO.quanta[feature_index].split())] = np.zeros((len(ig_start_iters),5))
     
     for i_ig, ig_start_iter in enumerate(ig_start_iters): 
         
@@ -158,17 +175,7 @@ for i_file, meas_file in enumerate(meas_file_names):
     
         ig_avg_location = (ig_start_iter + ig_stop_iter - 1) / 2 - ig_inc_shock  # average full IG periodes post shock
         t_processing = ig_avg_location / dfrep * 1e6 - t_inc2ref_shock  # time referenced to the reflected Shock
-        fit_results[meas_file][i_ig, 0] = t_processing
-
-        if t_processing < 0: 
-            T = T_pre # pre vs post shock temperature
-        else: 
-            T = T_all[i_file]
-
         
-        if time_resolved_pressure: # if we want time resolved pressure
-            P = pressure_data_P_smooth[np.argmin(abs(pressure_data_t-t_processing))] 
-            
         # average IGs together
         IG_avg = np.mean(IG_all[ig_start_iter:ig_stop_iter,:],axis=0)
         
@@ -184,95 +191,63 @@ for i_file, meas_file in enumerate(meas_file_names):
         abs_meas = - np.log(trans_meas)
         
         
-        
-        
         #%% -------------------------------------- fit features in measurements -------------------------------------- 
         
-        
-        df_CO.nu
-        
-        nu_delta = 2150.856008 - 2147.081134
-        
-        
-        feature_index = 152
-        nu_center = 2212.625365
- 
-        nu_left = nu_center-nu_delta/2
-        nu_right = nu_center+nu_delta/2
-        i_fits = td.bandwidth_select_td(wvn, [nu_left,nu_right], max_prime_factor=50) # wavenumber indices of interest
-        
-        abs_fit = abs_meas[i_fits[0]:i_fits[1]]
-        wvn_fit = wvn[i_fits[0]:i_fits[1]]
-
-    
-        def Gaussian(x, x0, A, wG, zerolevel):
-            return A* np.sqrt(np.log(2) / np.pi / wG**2) * np.exp(-(x-x0)**2*np.log(2) / wG**2) + zerolevel
-        
-        def Lorentzian(x, x0, A, wL, zerolevel):            
-            return A* 1/np.pi * wL / (wL**2 + (x-x0)**2) + zerolevel
-        
-        def VoigtConv(x, x0, A, wG, wL, zerolevel):
+        for feature_index, nu_center in df_CO.nu.iteritems():
             
-            G = np.fft.fft(Gaussian(x,x0,1,wG,0))
-            L = np.fft.fft(Lorentzian(x,x0,1,wL,0))
-            V = np.real(np.fft.fftshift(np.fft.ifft(G*L)))
+            nu_center -= 0.1
             
-            return A* V/np.trapz(V,x) + zerolevel
-        
-        vModel = Model(VoigtConv)
-        
-        # general model parameters
-        A_guess = 0.001
-        zero_level_guess = np.mean(abs_fit)
-        
-        vModel.set_param_hint('x0', value = nu_center, min=nu_left, max=nu_right)
-        vModel.set_param_hint('A', value = A_guess, min=0)
-        vModel.set_param_hint('zerolevel', value = zero_level_guess)
-        
-        # doppler (thermal) parameters        
-        Na = 6.02214129e26 # kmol-1, avogadro
-        k = 1.380649e-23 # m2 kg s-2 K-1, boltzman
-        M = 28.01 # kg kmol-1, mass of CO
-        wG_guess = (nu_center * 100) / speed_of_light * np.sqrt(2*Na*k*T*np.log(2) / M) /10
-        vModel.set_param_hint('wG', value = wG_guess, min=0)
-        
-        # voigt (collisional) parameters
-        wL_guess = df_CO.gamma_air[feature_index] * P
-        vModel.set_param_hint('wL', value = wL_guess, min=0)
-        
-        abs_fit_input = VoigtConv(wvn_fit, nu_center, A_guess, wG_guess, wL_guess, zero_level_guess)
-
-        plt.plot(wvn_fit, abs_fit, label='measurement')
-        plt.plot(wvn_fit, abs_fit_input, label='guess')
-        
-        result = vModel.fit(abs_fit, x=wvn_fit) #, method='nelder')
-        
-        print(result.best_values)
-        
-        rl = list(result.best_values.values())
+            nu_left = nu_center-nu_delta/4
+            nu_right = nu_center+nu_delta/4
+            i_fits = td.bandwidth_select_td(wvn, [nu_left,nu_right], max_prime_factor=50, print_value=False) # wavenumber indices of interest
+            
+            abs_fit = abs_meas[i_fits[0]:i_fits[1]]
+            wvn_fit = wvn[i_fits[0]:i_fits[1]]
     
-        wvn_fit_fine2 = np.linspace(wvn_fit[0], wvn_fit[-1], 80)
-        wvn_fit_fine3 = np.linspace(wvn_fit[0], wvn_fit[-1], 5000)
-    
-        abs_fit_result = VoigtConv(wvn_fit, *rl)
-        abs_fit_result2 = VoigtConv(wvn_fit_fine2, *rl)
-        abs_fit_result3 = VoigtConv(wvn_fit_fine3, *rl)
-
+            mod = Model(Lorentzian)
+            
+            # general model parameters
+            try: 
+                A_guess = fit_parameters[1] # use previous iteration
+                w_guess = fit_parameters[3] # use previous iteration
+            except: 
+                A_guess = 0.01
+                w_guess = 0.01
                 
-        plt.plot(wvn_fit, abs_fit_result, label='fit results')
-        plt.plot(wvn_fit_fine2, abs_fit_result2, label='fit results2')
-        plt.plot(wvn_fit_fine3, abs_fit_result3, label='fit results3')
+            zero_level_guess = np.mean(abs_fit)
+            
+            mod.set_param_hint('x0', value = nu_center, min=nu_left, max=nu_right)
+            mod.set_param_hint('A', value = A_guess, min=0)
+            mod.set_param_hint('w', value = w_guess, min=0)
+            mod.set_param_hint('zerolevel', value = zero_level_guess)
+                        
+            mod_fit = mod.fit(abs_fit, x=wvn_fit) #, method='nelder')
+            fit_parameters = list(mod_fit.best_values.values())
+            
+            fit_results[meas_file][''.join(df_CO.quanta[feature_index].split())][i_ig, 0] = t_processing
+            fit_results[meas_file][''.join(df_CO.quanta[feature_index].split())][i_ig,1:] = fit_parameters
+            
+        
+        #%% -------------------------------------- plot stuff -------------------------------------- 
 
-        plt.legend()
-        
+parameter_names = ['x0', 'A', 'w', 'zerolevel']
 
 
-        
-        
-        
-        
-        
-        asdasdasd
+for i_file, meas_file in enumerate(meas_file_names): 
+    
+    for feature_index, _ in df_CO.nu.iteritems():
 
-
+        x_plot = fit_results[meas_file][''.join(df_CO.quanta[feature_index].split())][:,0]
         
+        for i in range(len(fit_parameters)): 
+            
+            if i == 1 or i ==2: 
+                                
+                plt.figure(10*i_file + i)
+                plt.title(meas_file)
+                y_plot = fit_results[meas_file][''.join(df_CO.quanta[feature_index].split())][:,i+1]
+                plt.plot(x_plot, y_plot, 'x')
+                
+                plt.ylabel(parameter_names[i])
+            
+            
