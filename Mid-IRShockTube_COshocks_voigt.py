@@ -48,7 +48,7 @@ save_fits = False
 
 ig_start = 0 # start processing IG's at #ig_start
 ig_stop = 69 # assume the process has completed itself by ig_stop 
-ig_avg = 2 # how many to average together
+ig_avg = 5 # how many to average together
 
 ig_inc_shock = 19.5 # average location of the incident shock (this is what the data is clocked off of)
 t_inc2ref_shock = 35 # time between incident and reflected shock in microseconds
@@ -84,7 +84,7 @@ for i_file, file in enumerate(files_vac):
 #%% -------------------------------------- setup wavenumber axis based on lock conditions -------------------------------------- 
 
 wvn_target = 2175 # a wavenumber we know is in our range
-wvn2_fit = [2145, 2214] # [2080, 2245]
+wvn2_fit = [2080, 2245]
 
 hz2cm = 1 / speed_of_light / 100
 
@@ -129,8 +129,8 @@ nu_delta = df_CO_fund.nu.to_list()[1] - df_CO_fund.nu.to_list()[0] # spacing bet
 
 #%% -------------------------------------- setup for given file and load measurement data --------------------------------------   
     
-fit_results = {}
-fit_results_T = {}
+fit_results_feature = {}
+fit_results_global = {}
 
 for i_file, meas_file in enumerate(meas_file_names): 
 
@@ -153,8 +153,8 @@ for i_file, meas_file in enumerate(meas_file_names):
     # program will loop through them like this (assuming bins_avg = 3, ig_start = 15): 15b1+15b2+15b3, 15b2+15b3+15b4, ..., 15b7+15b8+16b1, 15b8+16b1+16b3, ...
     ig_start_iters = np.arange(ig_start, ig_stop - ig_avg+2)
             
-    fit_results[meas_file] = np.zeros((len(ig_start_iters), len(df_CO_fund.nu), 4+2*len(fits_plot)))
-    fit_results_T[meas_file] = np.zeros((len(ig_start_iters), 4+2*len(fits_plot)))
+    fit_results_feature[meas_file] = np.zeros((len(ig_start_iters), len(df_CO_fund.nu), 2 + 2*len(fits_plot)))
+    fit_results_global[meas_file] = np.zeros((len(ig_start_iters), 3 + 2*len(fits_plot)))
     
     for i_ig, ig_start_iter in enumerate(ig_start_iters): 
         
@@ -208,19 +208,19 @@ for i_file, meas_file in enumerate(meas_file_names):
         pars['pathlength'].set(value = PL, vary = False)
         
         pars['pressure'].set(value = P + P*np.random.rand()/1000, vary = fit_pressure)
-        pars['temperature'].set(value = T + T*np.random.rand()/1000, vary = True, min=250, max=3000)        
+        pars['temperature'].set(value = T + T*np.random.rand()/1000, vary = True, min=200, max=3000)        
         pars['molefraction'].set(value = y_CO + y_CO*np.random.rand()/1000, vary = fit_concentration)
         
         weight = td.weight_func(len(abs_fit), baseline_TD_start, baseline_TD_stop)
         fit = mod.fit(TD_fit, xx = wvn_fit, params = pars, weights = weight, name=molecule_name)
         
-        fit_results_T[meas_file][i_ig, 0] = t_processing
+        fit_results_global[meas_file][i_ig, 0] = t_processing
         
         for i_results, which_results in enumerate(fits_plot): 
                            
             # save some fit results and errors for plotting later
-            fit_results_T[meas_file][i_ig, 2*i_results+4] = fit.params[which_results].value
-            fit_results_T[meas_file][i_ig, 2*i_results+5] = fit.params[which_results].stderr
+            fit_results_global[meas_file][i_ig, 2*i_results+1] = fit.params[which_results].value
+            fit_results_global[meas_file][i_ig, 2*i_results+2] = fit.params[which_results].stderr
     
     #%% -------------------------------------- use the model to fit each feature one-by-one -------------------------------------- 
     
@@ -241,25 +241,23 @@ for i_file, meas_file in enumerate(meas_file_names):
     
             pld.db_begin(r'linelists\temp')  # load the linelists into Python        
             
-            T = fit_results_T[meas_file][i_ig, 2*fits_plot.index('temperature')+3] # fit temperature from whole spectra
+            T = fit_results_global[meas_file][i_ig, 2*fits_plot.index('temperature')+1] # fit temperature from whole spectra
             
             pars['pressure'].set(value = P + P*np.random.rand()/1000, vary = fit_pressure)
-            pars['temperature'].set(value = T + T*np.random.rand()/1000, vary = fit_temperature, min=250, max=3000)        
+            pars['temperature'].set(value = T + T*np.random.rand()/1000, vary = fit_temperature, min=200, max=3000)        
             pars['molefraction'].set(value = y_CO + y_CO*np.random.rand()/1000, vary = fit_concentration)
     
             weight = td.weight_func(len(abs_fit), baseline_TD_start//10, baseline_TD_stop)
 
             fit = mod.fit(TD_fit, xx = wvn_fit, params = pars, weights = weight, name=name_CO_temp)
             
-            fit_results[meas_file][i_ig, i_feature, 0] = t_processing
-            fit_results[meas_file][i_ig, i_feature, 1] = nu_center
-            fit_results[meas_file][i_ig, i_feature, 2] = df_CO_fund[df_CO_fund.nu==nu_center].elower
+            fit_results_feature[meas_file][i_ig, i_feature, 0] = t_processing
             
             for i_results, which_results in enumerate(fits_plot): 
                                
                 # save some fit results and errors for plotting later
-                fit_results[meas_file][i_ig, i_feature, 2*i_results+4] = fit.params[which_results].value
-                fit_results[meas_file][i_ig, i_feature, 2*i_results+5] = fit.params[which_results].stderr
+                fit_results_feature[meas_file][i_ig, i_feature, 2*i_results+1] = fit.params[which_results].value
+                fit_results_feature[meas_file][i_ig, i_feature, 2*i_results+2] = fit.params[which_results].stderr
                     
     #%% -------------------------------------- use model conditions to find integrated area for that feature -------------------------------------- 
             
@@ -269,20 +267,37 @@ for i_file, meas_file in enumerate(meas_file_names):
             pld.db_begin(r'linelists\temp')  # load the linelists into Python
             
             wvn_int = np.linspace(wvn_fit[0], wvn_fit[-1], 1000)
-            TD_model_int = mod.eval(xx=wvn_int, params=pars, name=name_CO_temp)
+            TD_model_int = mod.eval(xx=wvn_int, params=fit.params, name=name_CO_temp)
             abs_model_int = np.real(np.fft.rfft(TD_model_int))
             
-            fit_results[meas_file][i_ig, i_feature, 3] = np.trapz(abs_model_int, wvn_int)
-        
+            fit_results_feature[meas_file][i_ig, i_feature, -1] = np.trapz(abs_model_int, wvn_int)
+                
     #%% -------------------------------------- fit temperature using integrated area -------------------------------------- 
         
+        def boltzman_strength(T, nu, sw, elower, c): 
+            return lab.strength_T(T, elower, nu, molec_id=5) * sw * c
         
+        mod_bolt = Model(boltzman_strength,independent_vars=['nu','sw','elower'])
+        mod_bolt.set_param_hint('T',value=T, min=200, max=3000)
+        mod_bolt.set_param_hint('c',value=1e20)
+
         
+        result_bolt = mod_bolt.fit(fit_results_feature[meas_file][i_ig, :, -1], nu=df_CO_fund.nu, sw=df_CO_fund.sw, elower=df_CO_fund.elower)
         
-        asdfsdfs
+        fit_results_global[meas_file][i_ig, -2] = result_bolt.params['T'].value
+        fit_results_global[meas_file][i_ig, -1] = result_bolt.params['c'].value
+        
+        plt.figure()
+        plt.plot(df_CO_fund.elower, fit_results_feature[meas_file][i_ig, :, -1])
+        plt.plot(df_CO_fund.elower, result_bolt.best_fit)
+        plt.title(i_ig)
+
+# asdfsdfsd
+        
         #%% -------------------------------------- plot stuff -------------------------------------- 
 
 
+plt.figure()
 meas_file = '1Ar'
 
 for i_ig, ig_start_iter in enumerate(ig_start_iters):
@@ -292,17 +307,32 @@ for i_ig, ig_start_iter in enumerate(ig_start_iters):
     
     gray = 0 # i_ig / len(ig_start_iters)
                 
-    plot_x = fit_results[meas_file][i_ig, :, 2] # 0 = time, 1 = nu, 2 = E"
-    plot_y = fit_results[meas_file][i_ig, :, 3]
+    plot_x = df_CO_fund.elower
+    plot_y = fit_results_feature[meas_file][i_ig, :, -1]
             
     # plt.errorbar(plot_x, plot_y, yerr=plot_y_unc, color='k', ls='none', zorder=1)
     plt.plot(plot_x, plot_y, marker='x', label=meas_file , zorder=2, color=str(gray))
         
     plt.xlabel('Lower State Energy (E")')
-    plt.ylabel('{}'.format(which_results))
+    # plt.ylabel('{}'.format(which_results))
     
     # plt.legend(loc='lower right')
 
+
+        #%% -------------------------------------- plot stuff -------------------------------------- 
+
+
+
+plt.figure()
+colors = ['tab:blue','tab:orange','tab:red']
+
+for i_meas, meas_file in enumerate(['1Ar', '1ArL', '2Ar', '3Ar']):
+
+    plt.plot(fit_results_global[meas_file][:,0], fit_results_global[meas_file][:,-2], linestyle='solid',
+             label=meas_file+' boltzman', color=colors[i_meas])
+    plt.plot(fit_results_global[meas_file][:,0], fit_results_global[meas_file][:, 2*fits_plot.index('temperature')+1], linestyle='dashed',
+             label=meas_file+' global fit', color=colors[i_meas])
+    plt.legend()
 
 
 
