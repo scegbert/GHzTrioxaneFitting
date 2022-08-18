@@ -80,9 +80,9 @@ for i_file, file in enumerate(files_vac):
     b, a = signal.butter(forderLP, fcutoffLP)
     trans_vacs_smooth[i_file] = signal.filtfilt(b, a, trans_vac)
 
-
 #%% -------------------------------------- setup wavenumber axis based on lock conditions -------------------------------------- 
 
+i_ceo_beat = 3991 # index where ceo frequency is in spectrum
 wvn_target = 2175 # a wavenumber we know is in our range
 wvn2_fit = [2080, 2245]
 
@@ -112,11 +112,12 @@ PL = 1.27 # cm length of cell in furnace (double pass)
 y_CO = 0.05
 
 T_pre = 300 # temperature in K before the shock (for scaling trioxane measurement)
-P_pre = 0.44 # pressure in atm before the shock (for scaling trioxane measurement)
+P_pre = 0.5 # pressure in atm before the shock (for scaling trioxane measurement)
 
 # P_all =           [    3,      3,     5,     3,     3,      3,        5,       3,       3] # pressure in atm after shock (if assuming constant P)
 T_all =           [ 1200,   1200,  1200,  1500,  1820,    1200,    1200,    1500,    1820]  # temperature in K
 meas_file_names = ['1Ar', '1ArL', '2Ar', '3Ar', '4Ar', '1ArHe', '2ArHe', '3ArHe', '4ArHe']
+vac_shift =       [[0,0],  [4,2],[12,15],[7,10],[6,7],   [2,4],   [0,1],   [0,0],  [0,0]] # how many points to shift the vacuum scan to line up the etalons
 
 #%% -------------------------------------- load HITRAN model -------------------------------------- 
 
@@ -133,7 +134,13 @@ fit_results_feature = {}
 fit_results_global = {}
 
 for i_file, meas_file in enumerate(meas_file_names): 
-
+    
+    i_file = 3
+    meas_file = meas_file_names[i_file]
+    print('*********** hard coding file ************')
+    time.sleep(5)
+    
+    
     if i_file in [1, 5,6,7,8]: i_vac = 0
     else: i_vac = 1
     
@@ -147,14 +154,15 @@ for i_file, meas_file in enumerate(meas_file_names):
     pressure_data_P_smooth[np.argmin(abs(pressure_data_t))+1:] = signal.filtfilt(b, a, pressure_data_P[np.argmin(abs(pressure_data_t))+1:])
         
     IG_all = np.load(data_folder+meas_file+'.npy') 
-              
-    #%% -------------------------------------- average IGs together as desired (loop it) -------------------------------------- 
+
+
+#%% -------------------------------------- average IGs together as desired (loop it) -------------------------------------- 
     
     # program will loop through them like this (assuming bins_avg = 3, ig_start = 15): 15b1+15b2+15b3, 15b2+15b3+15b4, ..., 15b7+15b8+16b1, 15b8+16b1+16b3, ...
     ig_start_iters = np.arange(ig_start, ig_stop - ig_avg+2)
             
     fit_results_feature[meas_file] = np.zeros((len(ig_start_iters), len(df_CO_fund.nu), 2 + 2*len(fits_plot)))
-    fit_results_global[meas_file] = np.zeros((len(ig_start_iters), 3 + 2*len(fits_plot)))
+    fit_results_global[meas_file] = np.zeros((len(ig_start_iters), 5 + 2*len(fits_plot)))
     
     for i_ig, ig_start_iter in enumerate(ig_start_iters): 
         
@@ -181,8 +189,12 @@ for i_file, meas_file in enumerate(meas_file_names):
         
         meas_avg = np.fft.fftshift(np.fft.fft(np.fft.ifftshift(IG_avg))).__abs__()[i_center:] # FFT and remove reflected portion
         
+        # shift vacuum around to line up etalons in the data
+        trans_vacs_rolled = np.concatenate((np.roll(trans_vacs_smooth[i_vac], vac_shift[i_file][0])[:i_ceo_beat], 
+                                           np.roll(trans_vacs_smooth[i_vac], vac_shift[i_file][1])[i_ceo_beat:]))
+        
         # divide by vacuum to mostly normalize things
-        trans_meas = meas_avg / trans_vacs_smooth[i_vac]
+        trans_meas = meas_avg / trans_vacs_rolled
         
         # normalize max value to 1 (ish)
         i_target = np.argmin(abs(wvn-wvn_target))
@@ -190,6 +202,12 @@ for i_file, meas_file in enumerate(meas_file_names):
 
         abs_meas = - np.log(trans_meas)
         
+        # plt.figure(1)
+        # plt.plot(meas_avg / meas_avg[i_target])
+        # # plt.plot(trans_vacs_smooth[i_vac] / trans_vacs_smooth[i_vac][i_target])      
+        # plt.plot(trans_vacs_rolled / trans_vacs_rolled[i_target])      
+        # plt.plot(trans_meas - 0.2)
+               
         #%% -------------------------------------- setup the model for fitting global temperature  -------------------------------------- 
 
         i_fits = td.bandwidth_select_td(wvn, wvn2_fit, max_prime_factor=50, print_value=False) # wavenumber indices of interest
@@ -207,9 +225,9 @@ for i_file, meas_file in enumerate(meas_file_names):
         pars['shift'].vary = True
         pars['pathlength'].set(value = PL, vary = False)
         
-        pars['pressure'].set(value = P + P*np.random.rand()/1000, vary = fit_pressure)
+        pars['pressure'].set(value = P + P*np.random.rand()/1000, vary = fit_pressure, max=20)
         pars['temperature'].set(value = T + T*np.random.rand()/1000, vary = True, min=200, max=3000)        
-        pars['molefraction'].set(value = y_CO + y_CO*np.random.rand()/1000, vary = fit_concentration)
+        pars['molefraction'].set(value = y_CO + y_CO*np.random.rand()/1000, vary = fit_concentration, max=0.5)
         
         weight = td.weight_func(len(abs_fit), baseline_TD_start, baseline_TD_stop)
         fit = mod.fit(TD_fit, xx = wvn_fit, params = pars, weights = weight, name=molecule_name)
@@ -221,6 +239,7 @@ for i_file, meas_file in enumerate(meas_file_names):
             # save some fit results and errors for plotting later
             fit_results_global[meas_file][i_ig, 2*i_results+1] = fit.params[which_results].value
             fit_results_global[meas_file][i_ig, 2*i_results+2] = fit.params[which_results].stderr
+            
     
     #%% -------------------------------------- use the model to fit each feature one-by-one -------------------------------------- 
     
@@ -241,7 +260,9 @@ for i_file, meas_file in enumerate(meas_file_names):
     
             pld.db_begin(r'linelists\temp')  # load the linelists into Python        
             
+            P = fit_results_global[meas_file][i_ig, 2*fits_plot.index('pressure')+1] # fit temperature from whole spectra
             T = fit_results_global[meas_file][i_ig, 2*fits_plot.index('temperature')+1] # fit temperature from whole spectra
+            y_CO = fit_results_global[meas_file][i_ig, 2*fits_plot.index('molefraction')+1] # fit temperature from whole spectra
             
             pars['pressure'].set(value = P + P*np.random.rand()/1000, vary = fit_pressure)
             pars['temperature'].set(value = T + T*np.random.rand()/1000, vary = fit_temperature, min=200, max=3000)        
@@ -254,7 +275,7 @@ for i_file, meas_file in enumerate(meas_file_names):
             fit_results_feature[meas_file][i_ig, i_feature, 0] = t_processing
             
             for i_results, which_results in enumerate(fits_plot): 
-                               
+                
                 # save some fit results and errors for plotting later
                 fit_results_feature[meas_file][i_ig, i_feature, 2*i_results+1] = fit.params[which_results].value
                 fit_results_feature[meas_file][i_ig, i_feature, 2*i_results+2] = fit.params[which_results].stderr
@@ -271,7 +292,7 @@ for i_file, meas_file in enumerate(meas_file_names):
             abs_model_int = np.real(np.fft.rfft(TD_model_int))
             
             fit_results_feature[meas_file][i_ig, i_feature, -1] = np.trapz(abs_model_int, wvn_int)
-                
+            
     #%% -------------------------------------- fit temperature using integrated area -------------------------------------- 
         
         def boltzman_strength(T, nu, sw, elower, c): 
@@ -284,21 +305,24 @@ for i_file, meas_file in enumerate(meas_file_names):
         
         result_bolt = mod_bolt.fit(fit_results_feature[meas_file][i_ig, :, -1], nu=df_CO_fund.nu, sw=df_CO_fund.sw, elower=df_CO_fund.elower)
         
-        fit_results_global[meas_file][i_ig, -2] = result_bolt.params['T'].value
-        fit_results_global[meas_file][i_ig, -1] = result_bolt.params['c'].value
+        fit_results_global[meas_file][i_ig, -4] = result_bolt.params['T'].value
+        fit_results_global[meas_file][i_ig, -3] = result_bolt.params['T'].stderr
         
-        plt.figure()
-        plt.plot(df_CO_fund.elower, fit_results_feature[meas_file][i_ig, :, -1])
-        plt.plot(df_CO_fund.elower, result_bolt.best_fit)
-        plt.title(i_ig)
+        fit_results_global[meas_file][i_ig, -2] = result_bolt.params['c'].value
+        fit_results_global[meas_file][i_ig, -1] = result_bolt.params['c'].stderr
+        
+        # plt.figure()
+        # plt.plot(df_CO_fund.elower, fit_results_feature[meas_file][i_ig, :, -1])
+        # plt.plot(df_CO_fund.elower, result_bolt.best_fit)
+        # plt.title(i_ig)
 
-# asdfsdfsd
+asdfsdfsd
         
         #%% -------------------------------------- plot stuff -------------------------------------- 
 
 
 plt.figure()
-meas_file = '1Ar'
+# meas_file = '1Ar'
 
 for i_ig, ig_start_iter in enumerate(ig_start_iters):
 
@@ -321,18 +345,24 @@ for i_ig, ig_start_iter in enumerate(ig_start_iters):
 
         #%% -------------------------------------- plot stuff -------------------------------------- 
 
-
+plot_offset = 5
 
 plt.figure()
-colors = ['tab:blue','tab:orange','tab:red']
+colors = ['tab:blue','tab:orange','tab:red','tab:green', 'black']
 
-for i_meas, meas_file in enumerate(['1Ar', '1ArL', '2Ar', '3Ar']):
+# for i_file, meas_file in enumerate(meas_file_names):
 
-    plt.plot(fit_results_global[meas_file][:,0], fit_results_global[meas_file][:,-2], linestyle='solid',
-             label=meas_file+' boltzman', color=colors[i_meas])
-    plt.plot(fit_results_global[meas_file][:,0], fit_results_global[meas_file][:, 2*fits_plot.index('temperature')+1], linestyle='dashed',
-             label=meas_file+' global fit', color=colors[i_meas])
-    plt.legend()
+plt.plot(fit_results_global[meas_file][:,0] + i_file*plot_offset, fit_results_global[meas_file][:,-4], linestyle='solid',
+         label=meas_file+' boltzman', color=colors[i_file])
+plt.errorbar(fit_results_global[meas_file][:,0] + i_file*plot_offset, fit_results_global[meas_file][:,-4], 
+             yerr=fit_results_global[meas_file][:,-3], color='k', ls='none', zorder=1)
+
+plt.plot(fit_results_global[meas_file][:,0] + i_file*plot_offset*1.2, fit_results_global[meas_file][:, 2*fits_plot.index('temperature')+1], linestyle='dashed',
+          label=meas_file+' global fit', color=colors[i_file])
+plt.errorbar(fit_results_global[meas_file][:,0] + i_file*plot_offset*1.2, fit_results_global[meas_file][:, 2*fits_plot.index('temperature')+1], 
+             yerr=fit_results_global[meas_file][:, 2*fits_plot.index('temperature')+2], color='k', ls='none', zorder=1)
+
+plt.legend()
 
 
 
