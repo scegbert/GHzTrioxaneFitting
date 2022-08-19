@@ -2,8 +2,8 @@
 
 # delay until the processor is running below XX% load
 import time 
-import psutil
-while psutil.cpu_percent() > 80: time.sleep(60*15) # hang out for 15 minutes if CPU is busy
+
+# time.sleep(60*60*5) # hang out for 15 minutes if CPU is busy
 
 import numpy as np
 import matplotlib.pyplot as plt
@@ -79,6 +79,7 @@ for i_file, file in enumerate(files_vac):
     
     b, a = signal.butter(forderLP, fcutoffLP)
     trans_vacs_smooth[i_file] = signal.filtfilt(b, a, trans_vac)
+    
 
 #%% -------------------------------------- setup wavenumber axis based on lock conditions -------------------------------------- 
 
@@ -117,7 +118,9 @@ P_pre = 0.5 # pressure in atm before the shock (for scaling trioxane measurement
 # P_all =           [    3,      3,     5,     3,     3,      3,        5,       3,       3] # pressure in atm after shock (if assuming constant P)
 T_all =           [ 1200,   1200,  1200,  1500,  1820,    1200,    1200,    1500,    1820]  # temperature in K
 meas_file_names = ['1Ar', '1ArL', '2Ar', '3Ar', '4Ar', '1ArHe', '2ArHe', '3ArHe', '4ArHe']
-vac_shift =       [[0,0],  [4,2],[12,15],[7,10],[6,7],   [2,4],   [0,1],   [0,0],  [0,0]] # how many points to shift the vacuum scan to line up the etalons
+vac_shift =        [[0,0],  [4,2],[12,15],[7,10],[5,4],   [2,4],   [0,1],   [0,0],  [0,0]] # how many points to shift the vacuum scan to line up the etalons
+
+# [[0,0],  [4,2],[12,15],[7,10],[6,7],   [2,4],   [0,1],   [0,0],  [0,0]]
 
 #%% -------------------------------------- load HITRAN model -------------------------------------- 
 
@@ -133,13 +136,7 @@ nu_delta = df_CO_fund.nu.to_list()[1] - df_CO_fund.nu.to_list()[0] # spacing bet
 fit_results_feature = {}
 fit_results_global = {}
 
-for i_file, meas_file in enumerate(meas_file_names): 
-    
-    i_file = 3
-    meas_file = meas_file_names[i_file]
-    print('*********** hard coding file ************')
-    time.sleep(5)
-    
+for i_file, meas_file in enumerate(meas_file_names):     
     
     if i_file in [1, 5,6,7,8]: i_vac = 0
     else: i_vac = 1
@@ -147,7 +144,7 @@ for i_file, meas_file in enumerate(meas_file_names):
     # load time resolved pressure data
     pressure_data = np.loadtxt(r"H:\ShockTubeData\DATA_MATT_PATRICK_TRIP_2\CO\averaged CO shock tube data\Averaged Pressure Profile {}.csv".format(meas_file), delimiter=',')
     pressure_data_P = pressure_data[:,1] / 1.013 + 0.829 # convert from bar_gauge to ATM_abs
-    pressure_data_t = pressure_data[:,0] * 1000 # convert to milliseconds
+    pressure_data_t = pressure_data[:,0] * 1e6 # convert to microseconds
     
     pressure_data_P_smooth = pressure_data_P.copy() # smooth out the ringing in the pressure sensor
     b, a = signal.butter(forderLP, fcutoffLP)
@@ -199,7 +196,9 @@ for i_file, meas_file in enumerate(meas_file_names):
         # normalize max value to 1 (ish)
         i_target = np.argmin(abs(wvn-wvn_target))
         trans_meas = trans_meas / max(trans_meas[i_target-50:i_target+50])
-
+        
+        trans_meas[3946] = 1
+        
         abs_meas = - np.log(trans_meas)
         
         # plt.figure(1)
@@ -207,7 +206,7 @@ for i_file, meas_file in enumerate(meas_file_names):
         # # plt.plot(trans_vacs_smooth[i_vac] / trans_vacs_smooth[i_vac][i_target])      
         # plt.plot(trans_vacs_rolled / trans_vacs_rolled[i_target])      
         # plt.plot(trans_meas - 0.2)
-               
+                               
         #%% -------------------------------------- setup the model for fitting global temperature  -------------------------------------- 
 
         i_fits = td.bandwidth_select_td(wvn, wvn2_fit, max_prime_factor=50, print_value=False) # wavenumber indices of interest
@@ -240,7 +239,7 @@ for i_file, meas_file in enumerate(meas_file_names):
             fit_results_global[meas_file][i_ig, 2*i_results+1] = fit.params[which_results].value
             fit_results_global[meas_file][i_ig, 2*i_results+2] = fit.params[which_results].stderr
             
-    
+            
     #%% -------------------------------------- use the model to fit each feature one-by-one -------------------------------------- 
     
         for i_feature, nu_center in enumerate(df_CO_fund.nu):
@@ -299,7 +298,7 @@ for i_file, meas_file in enumerate(meas_file_names):
             return lab.strength_T(T, elower, nu, molec_id=5) * sw * c
         
         mod_bolt = Model(boltzman_strength,independent_vars=['nu','sw','elower'])
-        mod_bolt.set_param_hint('T',value=T, min=200, max=3000)
+        mod_bolt.set_param_hint('T',value=T, min=200, max=4000)
         mod_bolt.set_param_hint('c',value=1e20)
 
         
@@ -316,8 +315,9 @@ for i_file, meas_file in enumerate(meas_file_names):
         # plt.plot(df_CO_fund.elower, result_bolt.best_fit)
         # plt.title(i_ig)
 
-asdfsdfsd
-        
+
+asdfsdfs
+       
         #%% -------------------------------------- plot stuff -------------------------------------- 
 
 
@@ -329,9 +329,9 @@ for i_ig, ig_start_iter in enumerate(ig_start_iters):
     # plt.figure(figsize=(6, 4), dpi=200, facecolor='w', edgecolor='k')
     # plt.title('{} for {} while averaging {} IGs.npy'.format(which_results, meas_file, ig_avg))                       
     
-    gray = 0 # i_ig / len(ig_start_iters)
+    gray = i_ig / len(ig_start_iters)
                 
-    plot_x = df_CO_fund.elower
+    plot_x = df_CO_fund.nu
     plot_y = fit_results_feature[meas_file][i_ig, :, -1]
             
     # plt.errorbar(plot_x, plot_y, yerr=plot_y_unc, color='k', ls='none', zorder=1)
@@ -348,19 +348,19 @@ for i_ig, ig_start_iter in enumerate(ig_start_iters):
 plot_offset = 5
 
 plt.figure()
-colors = ['tab:blue','tab:orange','tab:red','tab:green', 'black']
+# colors = ['tab:blue','tab:orange','tab:red','tab:green', 'black']
 
-# for i_file, meas_file in enumerate(meas_file_names):
+# for i_file, meas_file in enumerate(meas_file_names[:5]):
 
 plt.plot(fit_results_global[meas_file][:,0] + i_file*plot_offset, fit_results_global[meas_file][:,-4], linestyle='solid',
-         label=meas_file+' boltzman', color=colors[i_file])
-plt.errorbar(fit_results_global[meas_file][:,0] + i_file*plot_offset, fit_results_global[meas_file][:,-4], 
-             yerr=fit_results_global[meas_file][:,-3], color='k', ls='none', zorder=1)
+         label=meas_file+' boltzman')#, color=colors[i_file])
+# plt.errorbar(fit_results_global[meas_file][:,0] + i_file*plot_offset, fit_results_global[meas_file][:,-4], 
+#              yerr=fit_results_global[meas_file][:,-3], color='k', ls='none', zorder=1)
 
 plt.plot(fit_results_global[meas_file][:,0] + i_file*plot_offset*1.2, fit_results_global[meas_file][:, 2*fits_plot.index('temperature')+1], linestyle='dashed',
-          label=meas_file+' global fit', color=colors[i_file])
-plt.errorbar(fit_results_global[meas_file][:,0] + i_file*plot_offset*1.2, fit_results_global[meas_file][:, 2*fits_plot.index('temperature')+1], 
-             yerr=fit_results_global[meas_file][:, 2*fits_plot.index('temperature')+2], color='k', ls='none', zorder=1)
+          label=meas_file+' global fit')#, color=colors[i_file])
+# plt.errorbar(fit_results_global[meas_file][:,0] + i_file*plot_offset*1.2, fit_results_global[meas_file][:, 2*fits_plot.index('temperature')+1], 
+#              yerr=fit_results_global[meas_file][:, 2*fits_plot.index('temperature')+2], color='k', ls='none', zorder=1)
 
 plt.legend()
 
