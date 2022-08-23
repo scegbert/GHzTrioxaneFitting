@@ -137,7 +137,7 @@ fit_results_feature = {}
 fit_results_global = {}
 
 for i_file, meas_file in enumerate(meas_file_names):     
-    
+        
     if i_file in [1, 5,6,7,8]: i_vac = 0
     else: i_vac = 1
     
@@ -158,7 +158,7 @@ for i_file, meas_file in enumerate(meas_file_names):
     # program will loop through them like this (assuming bins_avg = 3, ig_start = 15): 15b1+15b2+15b3, 15b2+15b3+15b4, ..., 15b7+15b8+16b1, 15b8+16b1+16b3, ...
     ig_start_iters = np.arange(ig_start, ig_stop - ig_avg+2)
             
-    fit_results_feature[meas_file] = np.zeros((len(ig_start_iters), len(df_CO_fund.nu), 2 + 2*len(fits_plot)))
+    fit_results_feature[meas_file] = np.zeros((len(ig_start_iters), len(df_CO_fund.nu), 3 + 2*len(fits_plot)))
     fit_results_global[meas_file] = np.zeros((len(ig_start_iters), 5 + 2*len(fits_plot)))
     
     for i_ig, ig_start_iter in enumerate(ig_start_iters): 
@@ -290,7 +290,14 @@ for i_file, meas_file in enumerate(meas_file_names):
             TD_model_int = mod.eval(xx=wvn_int, params=fit.params, name=name_CO_temp)
             abs_model_int = np.real(np.fft.rfft(TD_model_int))
             
-            fit_results_feature[meas_file][i_ig, i_feature, -1] = np.trapz(abs_model_int, wvn_int)
+            # plt.plot(wvn_int, abs_model_int)
+            # plt.plot(wvn_fit, abs_fit)
+            
+            fit_results_feature[meas_file][i_ig, i_feature, -2] = np.trapz(abs_model_int, wvn_int)
+            
+            # we're going to noise-weight the fit so it doesn't get dominated by the noisy features at the edges
+            fit_results_feature[meas_file][i_ig, i_feature, -1] = np.std(abs_fit - np.real(np.fft.rfft(fit.best_fit)))
+            
             
     #%% -------------------------------------- fit temperature using integrated area -------------------------------------- 
         
@@ -302,7 +309,10 @@ for i_file, meas_file in enumerate(meas_file_names):
         mod_bolt.set_param_hint('c',value=1e20)
 
         
-        result_bolt = mod_bolt.fit(fit_results_feature[meas_file][i_ig, :, -1], nu=df_CO_fund.nu, sw=df_CO_fund.sw, elower=df_CO_fund.elower)
+        
+        result_bolt = mod_bolt.fit(fit_results_feature[meas_file][i_ig, :, -2], 
+                                   nu=df_CO_fund.nu, sw=df_CO_fund.sw, elower=df_CO_fund.elower, 
+                                   weights=(1 - fit_results_feature[meas_file][i_ig, :, -1])**2) # noise weighting (focus on the good ones)
         
         fit_results_global[meas_file][i_ig, -4] = result_bolt.params['T'].value
         fit_results_global[meas_file][i_ig, -3] = result_bolt.params['T'].stderr
@@ -310,12 +320,16 @@ for i_file, meas_file in enumerate(meas_file_names):
         fit_results_global[meas_file][i_ig, -2] = result_bolt.params['c'].value
         fit_results_global[meas_file][i_ig, -1] = result_bolt.params['c'].stderr
         
+        
         # plt.figure()
-        # plt.plot(df_CO_fund.elower, fit_results_feature[meas_file][i_ig, :, -1])
-        # plt.plot(df_CO_fund.elower, result_bolt.best_fit)
+        # plt.plot(df_CO_fund.elower, fit_results_feature[meas_file][i_ig, :, -2])
+        # plt.plot(df_CO_fund.elower, result_bolt.best_fit, label='{} (fit)'.format(int(result_bolt.params['T'].value)))
+        # plt.plot(df_CO_fund.elower, boltzman_strength(
+        #     1800, df_CO_fund.nu, df_CO_fund.sw, df_CO_fund.elower, result_bolt.params['c'].value/2),label='1800')
+        # plt.plot(df_CO_fund.elower,  (1 - fit_results_feature[meas_file][i_ig, :, -1])**2)
         # plt.title(i_ig)
-
-
+        # plt.legend()
+        
 asdfsdfs
        
         #%% -------------------------------------- plot stuff -------------------------------------- 
@@ -332,12 +346,12 @@ for i_ig, ig_start_iter in enumerate(ig_start_iters):
     gray = i_ig / len(ig_start_iters)
                 
     plot_x = df_CO_fund.nu
-    plot_y = fit_results_feature[meas_file][i_ig, :, -1]
+    plot_y = fit_results_feature[meas_file][i_ig, :, -2]
             
     # plt.errorbar(plot_x, plot_y, yerr=plot_y_unc, color='k', ls='none', zorder=1)
     plt.plot(plot_x, plot_y, marker='x', label=meas_file , zorder=2, color=str(gray))
         
-    plt.xlabel('Lower State Energy (E")')
+    plt.xlabel('Wavenumner (cm-1) as proxy for lower state energy')
     # plt.ylabel('{}'.format(which_results))
     
     # plt.legend(loc='lower right')
@@ -348,17 +362,17 @@ for i_ig, ig_start_iter in enumerate(ig_start_iters):
 plot_offset = 5
 
 plt.figure()
-# colors = ['tab:blue','tab:orange','tab:red','tab:green', 'black']
+colors = ['tab:blue','tab:orange','tab:red','tab:green', 'black']
 
 # for i_file, meas_file in enumerate(meas_file_names[:5]):
 
 plt.plot(fit_results_global[meas_file][:,0] + i_file*plot_offset, fit_results_global[meas_file][:,-4], linestyle='solid',
-         label=meas_file+' boltzman')#, color=colors[i_file])
+         label=meas_file+' boltzman', color=colors[i_file])
 # plt.errorbar(fit_results_global[meas_file][:,0] + i_file*plot_offset, fit_results_global[meas_file][:,-4], 
 #              yerr=fit_results_global[meas_file][:,-3], color='k', ls='none', zorder=1)
 
 plt.plot(fit_results_global[meas_file][:,0] + i_file*plot_offset*1.2, fit_results_global[meas_file][:, 2*fits_plot.index('temperature')+1], linestyle='dashed',
-          label=meas_file+' global fit')#, color=colors[i_file])
+          label=meas_file+' global fit', color=colors[i_file])
 # plt.errorbar(fit_results_global[meas_file][:,0] + i_file*plot_offset*1.2, fit_results_global[meas_file][:, 2*fits_plot.index('temperature')+1], 
 #              yerr=fit_results_global[meas_file][:, 2*fits_plot.index('temperature')+2], color='k', ls='none', zorder=1)
 
