@@ -3,7 +3,7 @@
 # delay until the processor is running below XX% load
 import time 
 
-# time.sleep(60*60*5) # hang out for 15 minutes if CPU is busy
+# time.sleep(60*60*6) # hang out for X seconds
 
 import numpy as np
 import matplotlib.pyplot as plt
@@ -48,7 +48,7 @@ save_fits = False
 
 ig_start = 0 # start processing IG's at #ig_start
 ig_stop = 69 # assume the process has completed itself by ig_stop 
-ig_avg = 5 # how many to average together
+ig_avg = 1 # how many to average together
 
 ig_inc_shock = 19.5 # average location of the incident shock (this is what the data is clocked off of)
 t_inc2ref_shock = 35 # time between incident and reflected shock in microseconds
@@ -137,7 +137,15 @@ fit_results_feature = {}
 fit_results_global = {}
 
 for i_file, meas_file in enumerate(meas_file_names):     
-        
+    
+    # i_file = 8
+    # meas_file = meas_file_names[i_file]
+    
+    # print(meas_file)
+    # time.sleep(5)
+    
+    
+    
     if i_file in [1, 5,6,7,8]: i_vac = 0
     else: i_vac = 1
     
@@ -299,16 +307,18 @@ for i_file, meas_file in enumerate(meas_file_names):
             fit_results_feature[meas_file][i_ig, i_feature, -1] = np.std(abs_fit - np.real(np.fft.rfft(fit.best_fit)))
             
             
+            
     #%% -------------------------------------- fit temperature using integrated area -------------------------------------- 
         
         def boltzman_strength(T, nu, sw, elower, c): 
-            return lab.strength_T(T, elower, nu, molec_id=5) * sw * c
+            return lab.strength_T(T, elower, nu, molec_id=5) * sw * c # unitless scaling factor * 
         
         mod_bolt = Model(boltzman_strength,independent_vars=['nu','sw','elower'])
         mod_bolt.set_param_hint('T',value=T, min=200, max=4000)
-        mod_bolt.set_param_hint('c',value=1e20)
-
         
+        # use ideal gas approximation for c - proportional to P*y/T, 1e22 is empirical from this data
+        c_IG = 1e22 * P*y_CO / T
+        mod_bolt.set_param_hint('c',value=c_IG)
         
         result_bolt = mod_bolt.fit(fit_results_feature[meas_file][i_ig, :, -2], 
                                    nu=df_CO_fund.nu, sw=df_CO_fund.sw, elower=df_CO_fund.elower, 
@@ -320,14 +330,11 @@ for i_file, meas_file in enumerate(meas_file_names):
         fit_results_global[meas_file][i_ig, -2] = result_bolt.params['c'].value
         fit_results_global[meas_file][i_ig, -1] = result_bolt.params['c'].stderr
         
-        
         # plt.figure()
         # plt.plot(df_CO_fund.elower, fit_results_feature[meas_file][i_ig, :, -2])
         # plt.plot(df_CO_fund.elower, result_bolt.best_fit, label='{} (fit)'.format(int(result_bolt.params['T'].value)))
-        # plt.plot(df_CO_fund.elower, boltzman_strength(
-        #     1800, df_CO_fund.nu, df_CO_fund.sw, df_CO_fund.elower, result_bolt.params['c'].value/2),label='1800')
         # plt.plot(df_CO_fund.elower,  (1 - fit_results_feature[meas_file][i_ig, :, -1])**2)
-        # plt.title(i_ig)
+        # plt.title('{} - {}'.format(ig_start_iter, ig_stop_iter))
         # plt.legend()
         
 asdfsdfs
@@ -336,7 +343,7 @@ asdfsdfs
 
 
 plt.figure()
-# meas_file = '1Ar'
+meas_file = '4ArHe'
 
 for i_ig, ig_start_iter in enumerate(ig_start_iters):
 
@@ -351,35 +358,57 @@ for i_ig, ig_start_iter in enumerate(ig_start_iters):
     # plt.errorbar(plot_x, plot_y, yerr=plot_y_unc, color='k', ls='none', zorder=1)
     plt.plot(plot_x, plot_y, marker='x', label=meas_file , zorder=2, color=str(gray))
         
-    plt.xlabel('Wavenumner (cm-1) as proxy for lower state energy')
+    plt.xlabel('Wavenumber (cm-1) as proxy for lower state energy')
     # plt.ylabel('{}'.format(which_results))
     
     # plt.legend(loc='lower right')
 
 
-        #%% -------------------------------------- plot stuff -------------------------------------- 
+plt.plot(df_CO_fund.nu, fit_results_feature[meas_file][33, :, -2], marker='x', label=meas_file , zorder=2, color='b')
+plt.plot(df_CO_fund.nu, fit_results_feature[meas_file][40, :, -2], marker='x', label=meas_file , zorder=2, color='b')
+
+        #%% -------------------------------------- plot temperatures -------------------------------------- 
 
 plot_offset = 5
 
 plt.figure()
-colors = ['tab:blue','tab:orange','tab:red','tab:green', 'black']
+colors = ['tab:blue','tab:orange','tab:red','tab:green','tab:purple','tab:gray','tab:brown',]
 
-# for i_file, meas_file in enumerate(meas_file_names[:5]):
+for i_file, meas_file in enumerate(meas_file_names[5:]):
+    
+    plt.plot(fit_results_global[meas_file][:,0] + i_file*plot_offset, fit_results_global[meas_file][:,-4], linestyle='solid',
+             label=meas_file+' boltzman', color=colors[i_file])
+    # plt.errorbar(fit_results_global[meas_file][:,0] + i_file*plot_offset, fit_results_global[meas_file][:,-4], 
+    #               yerr=fit_results_global[meas_file][:,-3], color='k', ls='dotted', linewidth=0.3, zorder=1)
+    
+    plt.plot(fit_results_global[meas_file][:,0] + i_file*plot_offset*1.2, fit_results_global[meas_file][:, 2*fits_plot.index('temperature')+1], linestyle='dashed',
+              label=meas_file+' global fit', color=colors[i_file])
+    # plt.errorbar(fit_results_global[meas_file][:,0] + i_file*plot_offset*1.2, fit_results_global[meas_file][:, 2*fits_plot.index('temperature')+1], 
+    #              yerr=fit_results_global[meas_file][:, 2*fits_plot.index('temperature')+2], color='k', ls='none', zorder=1)
 
-plt.plot(fit_results_global[meas_file][:,0] + i_file*plot_offset, fit_results_global[meas_file][:,-4], linestyle='solid',
-         label=meas_file+' boltzman', color=colors[i_file])
-# plt.errorbar(fit_results_global[meas_file][:,0] + i_file*plot_offset, fit_results_global[meas_file][:,-4], 
-#              yerr=fit_results_global[meas_file][:,-3], color='k', ls='none', zorder=1)
-
-plt.plot(fit_results_global[meas_file][:,0] + i_file*plot_offset*1.2, fit_results_global[meas_file][:, 2*fits_plot.index('temperature')+1], linestyle='dashed',
-          label=meas_file+' global fit', color=colors[i_file])
-# plt.errorbar(fit_results_global[meas_file][:,0] + i_file*plot_offset*1.2, fit_results_global[meas_file][:, 2*fits_plot.index('temperature')+1], 
-#              yerr=fit_results_global[meas_file][:, 2*fits_plot.index('temperature')+2], color='k', ls='none', zorder=1)
-
-plt.legend()
+plt.legend(loc='upper left')
 
 
+        #%% -------------------------------------- plot other stuff -------------------------------------- 
 
+plot_offset = 5
+
+R = 1
+
+plt.figure()
+colors = ['tab:blue','tab:orange','tab:red','tab:green','tab:purple','tab:gray','tab:brown','tab:cyan','tab:pink']
+
+for i_file, meas_file in enumerate(meas_file_names):
+
+
+
+    y_plot = 1e22 * fit_results_global[meas_file][:,2*1+1] * fit_results_global[meas_file][:,2*2+1] / fit_results_global[meas_file][:,2*0+1]
+    y_plot = fit_results_global[meas_file][:,-2] / y_plot
+    
+    plt.plot(y_plot, linestyle='solid', label=meas_file, color=colors[i_file])
+
+plt.legend(loc='upper left')
+plt.title('HITRAN y*P/R/T')
 
 
 
