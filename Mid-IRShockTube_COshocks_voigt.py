@@ -3,7 +3,7 @@
 # delay until the processor is running below XX% load
 import time 
 
-# time.sleep(60*60*6) # hang out for X seconds
+# time.sleep(60*60*5) # hang out for X seconds
 
 import numpy as np
 import matplotlib.pyplot as plt
@@ -27,6 +27,7 @@ from lmfit import Model
 import clipboard_and_style_sheet
 clipboard_and_style_sheet.style_sheet()
 
+errors = 0
 
 #%% -------------------------------------- inputs we change sometimes -------------------------------------- 
 
@@ -41,19 +42,21 @@ fit_temperature = False
 
 data_folder = r"H:\ShockTubeData\DATA_MATT_PATRICK_TRIP_2\CO\averaged CO shock tube data\\"
 path_CO_temp = r"\\linelists\temp\\"
-name_CO_temp = 'CO_temp'
 
 plot_fits = False
 save_fits = False
 
 ig_start = 0 # start processing IG's at #ig_start
 ig_stop = 69 # assume the process has completed itself by ig_stop 
-ig_avg = 1 # how many to average together
+ig_avg = 5 # how many to average together
 
 ig_inc_shock = 19.5 # average location of the incident shock (this is what the data is clocked off of)
 t_inc2ref_shock = 35 # time between incident and reflected shock in microseconds
 
 fits_plot = ['temperature', 'pressure', 'molefraction', 'shift']
+
+exponent = 5
+name_CO_temp = 'CO_temp_{}_{}'.format(ig_avg,exponent) 
 
 
 #%% -------------------------------------- inputs you probably don't want to change -------------------------------------- 
@@ -120,16 +123,25 @@ T_all =           [ 1200,   1200,  1200,  1500,  1820,    1200,    1200,    1500
 meas_file_names = ['1Ar', '1ArL', '2Ar', '3Ar', '4Ar', '1ArHe', '2ArHe', '3ArHe', '4ArHe']
 vac_shift =        [[0,0],  [4,2],[12,15],[7,10],[5,4],   [2,4],   [0,1],   [0,0],  [0,0]] # how many points to shift the vacuum scan to line up the etalons
 
-# [[0,0],  [4,2],[12,15],[7,10],[6,7],   [2,4],   [0,1],   [0,0],  [0,0]]
-
 #%% -------------------------------------- load HITRAN model -------------------------------------- 
 
 df_CO = db.par_to_df(os.path.abspath('') + r'\linelists\\' + molecule_name + '.data')
 
-df_CO = df_CO[(df_CO.nu > wvn2_fit[0]) & (df_CO.nu < wvn2_fit[1])] # wavenumber range
-df_CO_fund = df_CO[df_CO.quanta.str.split(expand=True)[0] == '1'] # only looking at fundametal transitions for now
+df_CO[['quanta_U', 'quanta_L', 'quanta_branch', 'quanta_J']] = df_CO['quanta'].str.split(expand=True) # separate out quantum assignments column
+df_CO[['quanta_U', 'quanta_L', 'quanta_J']] = df_CO[['quanta_U', 'quanta_L', 'quanta_J']].astype(int)
+df_CO['quanta_m'] = df_CO['quanta_J'].copy()
+df_CO.loc[df_CO.quanta_branch == 'P', 'quanta_m'] = df_CO[df_CO.quanta_branch == 'P'].quanta_J * -1
+df_CO.loc[df_CO.quanta_branch == 'R', 'quanta_m'] = df_CO[df_CO.quanta_branch == 'R'].quanta_J + 1
 
-nu_delta = df_CO_fund.nu.to_list()[1] - df_CO_fund.nu.to_list()[0] # spacing between features
+df_CO = df_CO[(df_CO.nu > wvn2_fit[0]) & (df_CO.nu < wvn2_fit[1])] # wavenumber range
+
+nu_delta = np.mean(df_CO[df_CO.quanta_U == 1].nu.diff()) # spacing between features in fundamental
+
+separation = nu_delta / 4
+which = (((df_CO.nu.diff() > separation*1.25)&(-df_CO.nu.diff(periods=-1) > separation*1.25))|(df_CO.quanta_U == 1))
+# which = (df_CO.quanta_U == 1)
+df_CO_fund = df_CO[which].sort_values(['quanta_U','quanta_m']) # only looking at fundametal transitions for now, sort for plotting
+
 
 #%% -------------------------------------- setup for given file and load measurement data --------------------------------------   
     
@@ -138,14 +150,12 @@ fit_results_global = {}
 
 for i_file, meas_file in enumerate(meas_file_names):     
     
-    # i_file = 8
+    # i_file = 4
     # meas_file = meas_file_names[i_file]
     
     # print(meas_file)
     # time.sleep(5)
-    
-    
-    
+        
     if i_file in [1, 5,6,7,8]: i_vac = 0
     else: i_vac = 1
     
@@ -252,8 +262,8 @@ for i_file, meas_file in enumerate(meas_file_names):
     
         for i_feature, nu_center in enumerate(df_CO_fund.nu):
     
-            nu_left = nu_center-nu_delta/2
-            nu_right = nu_center+nu_delta/2
+            nu_left = nu_center-separation
+            nu_right = nu_center+separation
             i_fits = td.bandwidth_select_td(wvn, [nu_left,nu_right], max_prime_factor=50, print_value=False) # wavenumber indices of interest
 
             wvn_fit = wvn[i_fits[0]:i_fits[1]]
@@ -265,7 +275,13 @@ for i_file, meas_file in enumerate(meas_file_names):
             df_CO_iter = df_CO[(df_CO.nu > nu_left - 0.5) & (df_CO.nu < nu_right + 0.5)]
             db.df_to_par(df_CO_iter.reset_index(), par_name=name_CO_temp, save_dir=os.path.abspath('')+path_CO_temp, print_name=False)
     
-            pld.db_begin(r'linelists\temp')  # load the linelists into Python        
+            try: # was getting an intermittent error here when running the full code on multiple kernals. trying to circumvent
+                pld.db_begin(r'linelists\temp')  # load the linelists into Python      
+            except: 
+                errors+=1000
+                time.sleep(1)
+                pld.db_begin(r'linelists\temp')  # load the linelists into Python     
+            
             
             P = fit_results_global[meas_file][i_ig, 2*fits_plot.index('pressure')+1] # fit temperature from whole spectra
             T = fit_results_global[meas_file][i_ig, 2*fits_plot.index('temperature')+1] # fit temperature from whole spectra
@@ -277,7 +293,13 @@ for i_file, meas_file in enumerate(meas_file_names):
     
             weight = td.weight_func(len(abs_fit), baseline_TD_start//10, baseline_TD_stop)
 
-            fit = mod.fit(TD_fit, xx = wvn_fit, params = pars, weights = weight, name=name_CO_temp)
+            
+            try: # was getting an intermittent error here when running the full code on multiple kernals. trying to circumvent
+                fit = mod.fit(TD_fit, xx = wvn_fit, params = pars, weights = weight, name=name_CO_temp)
+            except: 
+                errors+=1
+                time.sleep(1)
+                fit = mod.fit(TD_fit, xx = wvn_fit, params = pars, weights = weight, name=name_CO_temp)
             
             fit_results_feature[meas_file][i_ig, i_feature, 0] = t_processing
             
@@ -292,7 +314,12 @@ for i_file, meas_file in enumerate(meas_file_names):
             # shrink the model to only include single feature of interest
             db.df_to_par(df_CO_fund.iloc[[i_feature]].reset_index(), par_name=name_CO_temp, save_dir=os.path.abspath('')+path_CO_temp, print_name=False)
 
-            pld.db_begin(r'linelists\temp')  # load the linelists into Python
+            try: # was getting an intermittent error here when running the full code on multiple kernals. trying to circumvent
+                pld.db_begin(r'linelists\temp')  # load the linelists into Python      
+            except: 
+                errors+=1000
+                time.sleep(1)
+                pld.db_begin(r'linelists\temp')  # load the linelists into Python 
             
             wvn_int = np.linspace(wvn_fit[0], wvn_fit[-1], 1000)
             TD_model_int = mod.eval(xx=wvn_int, params=fit.params, name=name_CO_temp)
@@ -311,7 +338,7 @@ for i_file, meas_file in enumerate(meas_file_names):
     #%% -------------------------------------- fit temperature using integrated area -------------------------------------- 
         
         def boltzman_strength(T, nu, sw, elower, c): 
-            return lab.strength_T(T, elower, nu, molec_id=5) * sw * c # unitless scaling factor * 
+            return lab.strength_T(T, elower, nu, molec_id=5) * sw * c # unitless scaling factor c
         
         mod_bolt = Model(boltzman_strength,independent_vars=['nu','sw','elower'])
         mod_bolt.set_param_hint('T',value=T, min=200, max=4000)
@@ -320,9 +347,19 @@ for i_file, meas_file in enumerate(meas_file_names):
         c_IG = 1e22 * P*y_CO / T
         mod_bolt.set_param_hint('c',value=c_IG)
         
+        
+        strength_estimate = boltzman_strength(T, df_CO_fund.nu, df_CO_fund.sw, df_CO_fund.elower, c_IG)
+        weight_noise = (max(fit_results_feature[meas_file][i_ig, :, -1]) - fit_results_feature[meas_file][i_ig, :, -1])**exponent # <--- unfortunately, exponent is arbitrary, max sets range from 0-1
+        weight_noise = weight_noise / max(weight_noise)
+        weight_strength = strength_estimate.to_numpy()
+        weight_strength = weight_strength / max(weight_strength)
+        
+        weight = (weight_noise + weight_strength) 
+        weight = weight / max(weight)
+       
         result_bolt = mod_bolt.fit(fit_results_feature[meas_file][i_ig, :, -2], 
                                    nu=df_CO_fund.nu, sw=df_CO_fund.sw, elower=df_CO_fund.elower, 
-                                   weights=(1 - fit_results_feature[meas_file][i_ig, :, -1])**2) # noise weighting (focus on the good ones)
+                                   weights=weight) # noise weighting (focus on the good ones)
         
         fit_results_global[meas_file][i_ig, -4] = result_bolt.params['T'].value
         fit_results_global[meas_file][i_ig, -3] = result_bolt.params['T'].stderr
@@ -330,11 +367,42 @@ for i_file, meas_file in enumerate(meas_file_names):
         fit_results_global[meas_file][i_ig, -2] = result_bolt.params['c'].value
         fit_results_global[meas_file][i_ig, -1] = result_bolt.params['c'].stderr
         
+        plt.figure()
+               
+        for q in [1,2]: 
+            
+            which = (df_CO_fund.quanta_U==q)
+            
+            plt.plot(df_CO_fund[which].quanta_m, fit_results_feature[meas_file][i_ig, :, -2][which], 
+                      color='tab:green', marker='v', linewidth=3, label='measurement')
+        
+            plt.plot(df_CO_fund[which].quanta_m, result_bolt.best_fit[which], 
+                      color='tab:blue', marker='x', label='T = {} K (boltzmann)'.format(int(result_bolt.params['T'].value)), linewidth=3)
+            
+            plt.plot(df_CO_fund[which].quanta_m, strength_estimate[which], 
+                      color='tab:orange', marker='x', label='T = {} K (HITRAN)'.format(int(T)), linewidth=3)
+
+            plt.plot(df_CO_fund[which].quanta_m,  weight[which]/10,
+                      '.', color='black', label='weight/10', linewidth=1)
+        
+            if q == 1: plt.legend()
+
+        plt.title(ig_start_iter)
+        plt.xlabel('quantum number (m)')
+        plt.ylabel('integrated area of feature')
+        
+        
+        plt.ylim((0,0.3))
+        
+        plt.savefig(r'C:\\Users\\scott\\Downloads\\{} {} IG {}.jpg'.format(meas_file, name_CO_temp, ig_start_iter), 
+                    bbox_inches='tight')
+        plt.close()
+                
+           
         # plt.figure()
-        # plt.plot(df_CO_fund.elower, fit_results_feature[meas_file][i_ig, :, -2])
-        # plt.plot(df_CO_fund.elower, result_bolt.best_fit, label='{} (fit)'.format(int(result_bolt.params['T'].value)))
-        # plt.plot(df_CO_fund.elower,  (1 - fit_results_feature[meas_file][i_ig, :, -1])**2)
-        # plt.title('{} - {}'.format(ig_start_iter, ig_stop_iter))
+        # plt.plot(df_CO_fund.quanta_m,  weight, 'x', label='weight', linewidth=1)
+        # plt.plot(df_CO_fund.quanta_m,  weight_strength, 'x', label='weight_strength', linewidth=1)
+        # plt.plot(df_CO_fund.quanta_m,  weight_noise, 'x', label='weight_noise', linewidth=1)
         # plt.legend()
         
 asdfsdfs
@@ -374,12 +442,12 @@ plot_offset = 5
 plt.figure()
 colors = ['tab:blue','tab:orange','tab:red','tab:green','tab:purple','tab:gray','tab:brown',]
 
-for i_file, meas_file in enumerate(meas_file_names[5:]):
+for i_file, meas_file in enumerate(meas_file_names[:5]):
     
     plt.plot(fit_results_global[meas_file][:,0] + i_file*plot_offset, fit_results_global[meas_file][:,-4], linestyle='solid',
              label=meas_file+' boltzman', color=colors[i_file])
-    # plt.errorbar(fit_results_global[meas_file][:,0] + i_file*plot_offset, fit_results_global[meas_file][:,-4], 
-    #               yerr=fit_results_global[meas_file][:,-3], color='k', ls='dotted', linewidth=0.3, zorder=1)
+    plt.errorbar(fit_results_global[meas_file][:,0] + i_file*plot_offset, fit_results_global[meas_file][:,-4], 
+                  yerr=fit_results_global[meas_file][:,-3], color='k', ls='dotted', linewidth=0.3, zorder=1)
     
     plt.plot(fit_results_global[meas_file][:,0] + i_file*plot_offset*1.2, fit_results_global[meas_file][:, 2*fits_plot.index('temperature')+1], linestyle='dashed',
               label=meas_file+' global fit', color=colors[i_file])
@@ -387,7 +455,9 @@ for i_file, meas_file in enumerate(meas_file_names[5:]):
     #              yerr=fit_results_global[meas_file][:, 2*fits_plot.index('temperature')+2], color='k', ls='none', zorder=1)
 
 plt.legend(loc='upper left')
-
+plt.xlabel('time post shock')
+plt.ylabel('Temperature (K)')
+plt.title('Averaging {} IGs'.format(ig_avg))
 
         #%% -------------------------------------- plot other stuff -------------------------------------- 
 
