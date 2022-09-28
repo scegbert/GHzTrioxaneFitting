@@ -55,7 +55,7 @@ t_inc2ref_shock = 35 # time between incident and reflected shock in microseconds
 
 fits_plot = ['temperature', 'pressure', 'molefraction', 'shift']
 
-exponent = 5
+exponent = 1
 name_CO_temp = 'CO_temp_{}_{}'.format(ig_avg,exponent) 
 
 
@@ -87,7 +87,7 @@ for i_file, file in enumerate(files_vac):
 #%% -------------------------------------- setup wavenumber axis based on lock conditions -------------------------------------- 
 
 i_ceo_beat = 3991 # index where ceo frequency is in spectrum
-wvn_target = 2175 # a wavenumber we know is in our range
+wvn_target = 2175 # a wavenumber we know is in our range (ie Nyquist window)
 wvn2_fit = [2080, 2245]
 
 hz2cm = 1 / speed_of_light / 100
@@ -160,8 +160,8 @@ for i_file, meas_file in enumerate(meas_file_names):
     else: i_vac = 1
     
     # load time resolved pressure data
-    pressure_data = np.loadtxt(r"H:\ShockTubeData\DATA_MATT_PATRICK_TRIP_2\CO\averaged CO shock tube data\Averaged Pressure Profile {}.csv".format(meas_file), delimiter=',')
-    pressure_data_P = pressure_data[:,1] / 1.013 + 0.829 # convert from bar_gauge to ATM_abs
+    pressure_data = np.loadtxt(r"H:\ShockTubeData\DATA_MATT_PATRICK_TRIP_2\CO\averaged CO shock tube data\Averaged Pressure Profile {} update.csv".format(meas_file), delimiter=',')
+    pressure_data_P = pressure_data[:,1] / 1.013 # convert from bar to atm
     pressure_data_t = pressure_data[:,0] * 1e6 # convert to microseconds
     
     pressure_data_P_smooth = pressure_data_P.copy() # smooth out the ringing in the pressure sensor
@@ -169,7 +169,6 @@ for i_file, meas_file in enumerate(meas_file_names):
     pressure_data_P_smooth[np.argmin(abs(pressure_data_t))+1:] = signal.filtfilt(b, a, pressure_data_P[np.argmin(abs(pressure_data_t))+1:])
         
     IG_all = np.load(data_folder+meas_file+'.npy') 
-
 
 #%% -------------------------------------- average IGs together as desired (loop it) -------------------------------------- 
     
@@ -250,16 +249,22 @@ for i_file, meas_file in enumerate(meas_file_names):
         fit = mod.fit(TD_fit, xx = wvn_fit, params = pars, weights = weight, name=molecule_name)
         
         fit_results_global[meas_file][i_ig, 0] = t_processing
+        fit_results_global[meas_file][i_ig, 1] = P # pressure according to Matt
         
         for i_results, which_results in enumerate(fits_plot): 
                            
             # save some fit results and errors for plotting later
-            fit_results_global[meas_file][i_ig, 2*i_results+1] = fit.params[which_results].value
-            fit_results_global[meas_file][i_ig, 2*i_results+2] = fit.params[which_results].stderr
+            fit_results_global[meas_file][i_ig, 2*i_results+2] = fit.params[which_results].value
+            fit_results_global[meas_file][i_ig, 2*i_results+3] = fit.params[which_results].stderr
             
             
     #%% -------------------------------------- use the model to fit each feature one-by-one -------------------------------------- 
-    
+        
+        P = fit_results_global[meas_file][i_ig, 2*fits_plot.index('pressure')+2] # fit temperature from whole spectra
+        T = fit_results_global[meas_file][i_ig, 2*fits_plot.index('temperature')+2] # fit pressure from whole spectra
+        y_CO = fit_results_global[meas_file][i_ig, 2*fits_plot.index('molefraction')+2] # fit y from whole spectra
+        shift = fit_results_global[meas_file][i_ig, 2*fits_plot.index('shift')+2] # fit shift from whole spectra
+        
         for i_feature, nu_center in enumerate(df_CO_fund.nu):
     
             nu_left = nu_center-separation
@@ -274,57 +279,57 @@ for i_file, meas_file in enumerate(meas_file_names):
             # shrink the model to only include region of interest
             df_CO_iter = df_CO[(df_CO.nu > nu_left - 0.5) & (df_CO.nu < nu_right + 0.5)]
             db.df_to_par(df_CO_iter.reset_index(), par_name=name_CO_temp, save_dir=os.path.abspath('')+path_CO_temp, print_name=False)
-    
-            try: # was getting an intermittent error here when running the full code on multiple kernals. trying to circumvent
-                pld.db_begin(r'linelists\temp')  # load the linelists into Python      
-            except: 
-                errors+=1000
-                time.sleep(1)
-                pld.db_begin(r'linelists\temp')  # load the linelists into Python     
             
+            error = True
+            while error == True:
+                try: # was getting an intermittent error here when running the full code on multiple kernals. trying to circumvent
+                    pld.db_begin(r'linelists\temp')  # load the linelists into Python      
+                    error = False
+                except: 
+                    errors+=1000
             
-            P = fit_results_global[meas_file][i_ig, 2*fits_plot.index('pressure')+1] # fit temperature from whole spectra
-            T = fit_results_global[meas_file][i_ig, 2*fits_plot.index('temperature')+1] # fit temperature from whole spectra
-            y_CO = fit_results_global[meas_file][i_ig, 2*fits_plot.index('molefraction')+1] # fit temperature from whole spectra
-            
-            pars['pressure'].set(value = P + P*np.random.rand()/1000, vary = fit_pressure)
+            pars['pressure'].set(value = P, vary = fit_pressure, min=P/2, max=P*2)
             pars['temperature'].set(value = T + T*np.random.rand()/1000, vary = fit_temperature, min=200, max=3000)        
-            pars['molefraction'].set(value = y_CO + y_CO*np.random.rand()/1000, vary = fit_concentration)
+            pars['molefraction'].set(value = y_CO, vary = fit_concentration, min=y_CO/2, max=y_CO*2)  
+            
+            pars['shift'].set(value = shift, vary = True, min=shift-0.01, max=shift+0.01)  
     
             weight = td.weight_func(len(abs_fit), baseline_TD_start//10, baseline_TD_stop)
 
-            
-            try: # was getting an intermittent error here when running the full code on multiple kernals. trying to circumvent
-                fit = mod.fit(TD_fit, xx = wvn_fit, params = pars, weights = weight, name=name_CO_temp)
-            except: 
-                errors+=1
-                time.sleep(1)
-                fit = mod.fit(TD_fit, xx = wvn_fit, params = pars, weights = weight, name=name_CO_temp)
+            error = True
+            while error == True:
+                try: # was getting an intermittent error here when running the full code on multiple kernals. trying to circumvent
+                    fit = mod.fit(TD_fit, xx = wvn_fit, params = pars, weights = weight, name=name_CO_temp)     
+                    error = False
+                except: 
+                    errors+=1          
             
             fit_results_feature[meas_file][i_ig, i_feature, 0] = t_processing
             
             for i_results, which_results in enumerate(fits_plot): 
                 
-                # save some fit results and errors for plotting later
+                # save some fit results and errors for plotting later (for troubleshooting, ie pressure jumps to 500 would probably be wrong)
                 fit_results_feature[meas_file][i_ig, i_feature, 2*i_results+1] = fit.params[which_results].value
                 fit_results_feature[meas_file][i_ig, i_feature, 2*i_results+2] = fit.params[which_results].stderr
-                    
+            
     #%% -------------------------------------- use model conditions to find integrated area for that feature -------------------------------------- 
             
             # shrink the model to only include single feature of interest
             db.df_to_par(df_CO_fund.iloc[[i_feature]].reset_index(), par_name=name_CO_temp, save_dir=os.path.abspath('')+path_CO_temp, print_name=False)
 
-            try: # was getting an intermittent error here when running the full code on multiple kernals. trying to circumvent
-                pld.db_begin(r'linelists\temp')  # load the linelists into Python      
-            except: 
-                errors+=1000
-                time.sleep(1)
-                pld.db_begin(r'linelists\temp')  # load the linelists into Python 
+            error = True
+            while error == True:
+                try: # was getting an intermittent error here when running the full code on multiple kernals. trying to circumvent
+                    pld.db_begin(r'linelists\temp')  # load the linelists into Python      
+                    error = False
+                except: 
+                    errors+=1000
             
             wvn_int = np.linspace(wvn_fit[0], wvn_fit[-1], 1000)
             TD_model_int = mod.eval(xx=wvn_int, params=fit.params, name=name_CO_temp)
             abs_model_int = np.real(np.fft.rfft(TD_model_int))
             
+            # plt.figure(3*i_ig)
             # plt.plot(wvn_int, abs_model_int)
             # plt.plot(wvn_fit, abs_fit)
             
@@ -371,10 +376,13 @@ for i_file, meas_file in enumerate(meas_file_names):
                
         for q in [1,2]: 
             
+            if q==1: mark='v'
+            elif q==2: mark='^'
+            
             which = (df_CO_fund.quanta_U==q)
             
             plt.plot(df_CO_fund[which].quanta_m, fit_results_feature[meas_file][i_ig, :, -2][which], 
-                      color='tab:green', marker='v', linewidth=3, label='measurement')
+                      color='tab:green', marker=mark, linewidth=3, label='measurement')
         
             plt.plot(df_CO_fund[which].quanta_m, result_bolt.best_fit[which], 
                       color='tab:blue', marker='x', label='T = {} K (boltzmann)'.format(int(result_bolt.params['T'].value)), linewidth=3)
@@ -394,20 +402,21 @@ for i_file, meas_file in enumerate(meas_file_names):
         
         plt.ylim((0,0.3))
         
-        plt.savefig(r'C:\\Users\\scott\\Downloads\\{} {} IG {}.jpg'.format(meas_file, name_CO_temp, ig_start_iter), 
+        plt.savefig(r'C:\\Users\\scott\\Downloads\\plots\\{} {} IG {}.jpg'.format(meas_file, name_CO_temp, ig_start_iter), 
                     bbox_inches='tight')
         plt.close()
                 
            
         # plt.figure()
-        # plt.plot(df_CO_fund.quanta_m,  weight, 'x', label='weight', linewidth=1)
+        # plt.plot(df_CO_fund.quanta_m,  weight, 'x', label='total weight (n={})'.format(exponent), linewidth=1)
         # plt.plot(df_CO_fund.quanta_m,  weight_strength, 'x', label='weight_strength', linewidth=1)
-        # plt.plot(df_CO_fund.quanta_m,  weight_noise, 'x', label='weight_noise', linewidth=1)
+        # plt.plot(df_CO_fund.quanta_m,  weight_noise, 'x', label='weight_noise (n={})'.format(exponent), linewidth=1)
         # plt.legend()
+        
         
 asdfsdfs
        
-        #%% -------------------------------------- plot stuff -------------------------------------- 
+        #%% -------------------------------------- plot the boltzmann curve you just fit -------------------------------------- 
 
 
 plt.figure()
@@ -432,57 +441,103 @@ for i_ig, ig_start_iter in enumerate(ig_start_iters):
     # plt.legend(loc='lower right')
 
 
-plt.plot(df_CO_fund.nu, fit_results_feature[meas_file][33, :, -2], marker='x', label=meas_file , zorder=2, color='b')
-plt.plot(df_CO_fund.nu, fit_results_feature[meas_file][40, :, -2], marker='x', label=meas_file , zorder=2, color='b')
-
-        #%% -------------------------------------- plot temperatures -------------------------------------- 
+        #%% -------------------------------------- plot boltzmann and HITRAN temperatures -------------------------------------- 
 
 plot_offset = 5
 
-plt.figure()
-colors = ['tab:blue','tab:orange','tab:red','tab:green','tab:purple','tab:gray','tab:brown',]
+plt.figure(figsize=(15, 4))
+colors = ['navy','darkslateblue','darkgreen','darkred','darkorange','blue','seagreen','lightcoral','goldenrod']
 
-for i_file, meas_file in enumerate(meas_file_names[:5]):
+for i_file, meas_file in enumerate(meas_file_names):
+
+    if meas_file[0]=='4': 
     
-    plt.plot(fit_results_global[meas_file][:,0] + i_file*plot_offset, fit_results_global[meas_file][:,-4], linestyle='solid',
-             label=meas_file+' boltzman', color=colors[i_file])
-    plt.errorbar(fit_results_global[meas_file][:,0] + i_file*plot_offset, fit_results_global[meas_file][:,-4], 
-                  yerr=fit_results_global[meas_file][:,-3], color='k', ls='dotted', linewidth=0.3, zorder=1)
-    
-    plt.plot(fit_results_global[meas_file][:,0] + i_file*plot_offset*1.2, fit_results_global[meas_file][:, 2*fits_plot.index('temperature')+1], linestyle='dashed',
-              label=meas_file+' global fit', color=colors[i_file])
-    # plt.errorbar(fit_results_global[meas_file][:,0] + i_file*plot_offset*1.2, fit_results_global[meas_file][:, 2*fits_plot.index('temperature')+1], 
-    #              yerr=fit_results_global[meas_file][:, 2*fits_plot.index('temperature')+2], color='k', ls='none', zorder=1)
+        plt.plot(fit_results_global[meas_file][:,0] + i_file*plot_offset, fit_results_global[meas_file][:,-4], linestyle='solid',
+                 label=meas_file+' boltzman', color=colors[i_file], linewidth=3)
+        plt.errorbar(fit_results_global[meas_file][:,0] + i_file*plot_offset, fit_results_global[meas_file][:,-4], 
+                      yerr=fit_results_global[meas_file][:,-3], color='k', ls='dotted', linewidth=0.3, zorder=1)
+        
+        plt.plot(fit_results_global[meas_file][:,0] + i_file*plot_offset*1.2, fit_results_global[meas_file][:, 2*fits_plot.index('temperature')+2], linestyle='dashed',
+                  color=colors[i_file], linewidth=3)
 
 plt.legend(loc='upper left')
-plt.xlabel('time post shock')
+plt.xlabel('time post shock (us)')
 plt.ylabel('Temperature (K)')
 plt.title('Averaging {} IGs'.format(ig_avg))
 
-        #%% -------------------------------------- plot other stuff -------------------------------------- 
+plt.xlim((-70,730))
+
+# plt.xlim((-340, 740))
+plt.ylim((240,2590))
+
+        #%% -------------------------------------- plot concentration estimates -------------------------------------- 
 
 plot_offset = 5
 
 R = 1
 
-plt.figure()
-colors = ['tab:blue','tab:orange','tab:red','tab:green','tab:purple','tab:gray','tab:brown','tab:cyan','tab:pink']
+plt.figure(figsize=(15, 4))
+
+colors = ['navy','darkslateblue','darkgreen','darkred','darkorange','blue','seagreen','lightcoral','goldenrod']
 
 for i_file, meas_file in enumerate(meas_file_names):
-
-
-
-    y_plot = 1e22 * fit_results_global[meas_file][:,2*1+1] * fit_results_global[meas_file][:,2*2+1] / fit_results_global[meas_file][:,2*0+1]
-    y_plot = fit_results_global[meas_file][:,-2] / y_plot
     
-    plt.plot(y_plot, linestyle='solid', label=meas_file, color=colors[i_file])
-
+    x_plot = fit_results_global[meas_file][:,0]
+    
+    P_matt = fit_results_global[meas_file][:,1]
+    P_opt = fit_results_global[meas_file][:, 2*fits_plot.index('pressure')+2]
+    y_opt = fit_results_global[meas_file][:, 2*fits_plot.index('molefraction')+2]
+    
+    y_plot1 = (P_opt * y_opt / P_matt) #/0.05
+    y_plot2 = (y_opt) #/0.05
+    
+    y_plot3 = (y_plot2 - y_plot1) / y_plot1
+    
+    plt.axhline(0.05, color='k')
+    
+    # plt.plot(x_plot, y_plot3, linestyle='solid', label=meas_file, color=colors[i_file], linewidth=3)
+    
+    plt.plot(x_plot, y_plot1, linestyle='solid', label=meas_file, color=colors[i_file], linewidth=3)
+    # plt.plot(x_plot, y_plot2, linestyle='dashed', color=colors[i_file], linewidth=3)
+        
 plt.legend(loc='upper left')
-plt.title('HITRAN y*P/R/T')
+plt.xlabel('time post reflected shock (us)')
+plt.ylabel('Concentration')
 
+plt.xlim((-70,730))
+plt.ylim((0.025, 0.15))
 
+        #%% -------------------------------------- plot pressure -------------------------------------- 
 
+plot_offset = 5
 
+R = 1
+
+plt.figure(figsize=(15, 4))
+colors = ['navy','darkslateblue','darkgreen','darkred','darkorange','blue','seagreen','lightcoral','goldenrod']
+
+for i_file, meas_file in enumerate(meas_file_names):
+    
+    x_plot = fit_results_global[meas_file][:,0]
+    
+    P_matt = fit_results_global[meas_file][:,1]
+    P_opt = fit_results_global[meas_file][:, 2*fits_plot.index('pressure')+2]
+    
+    y_plot = (P_opt - P_matt) / P_matt
+    
+    plt.plot(x_plot, y_plot, linestyle='solid', label=meas_file, color=colors[i_file], linewidth=3)
+    
+    # plt.plot(x_plot, P_opt, linestyle='solid', label=meas_file, color=colors[i_file], linewidth=3)
+    # plt.plot(x_plot, P_matt, linestyle='dashed', color=colors[i_file], linewidth=3)
+        
+    
+plt.xlabel('time post reflected shock (us)')
+plt.ylabel('Pressure (opt-matt)/matt')
+# plt.ylabel('Pressure (atm)')
+plt.legend(loc='upper left')
+
+plt.xlim((-70,730))
+# plt.ylim((-0.1, 9.5))
 
             
 
