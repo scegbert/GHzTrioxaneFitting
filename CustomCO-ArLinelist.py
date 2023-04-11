@@ -534,7 +534,7 @@ for prop in ['delta_air', 'gamma_air', 'n_air']:
 
 
 
-db.df_to_par(df_Ar_HITRAN, par_name = molecule+'_Ar', save_dir=d_database)
+# db.df_to_par(df_Ar_HITRAN, par_name = molecule+'_Ar', save_dir=d_database)
 
 
 
