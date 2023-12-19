@@ -102,7 +102,7 @@ def plot_fit(df_all, df_name, props, props_name, fit_all, fit_names, fit_x, tran
 
 #%% -------------------------------------- setup wavenumber axis that spans large range ---------------- 
 
-d_database = r"C:\Users\scott\Documents\1-WorkStuff\code\GHzTrioxaneFitting\linelists\\"
+d_database = r"C:\Users\silmaril\Documents\from scott - making silmaril a water computer\GHzTrioxaneFitting\linelists\\"
 
 
 wvn = np.arange(2150,2280,1e9/speed_of_light/100)

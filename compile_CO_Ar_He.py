@@ -2,6 +2,8 @@
 """
 Created on Mon Jul 25 17:02:06 2022
 
+compile shock tube data into simple file for reading in later
+
 @author: scott
 """
 
@@ -9,7 +11,7 @@ Created on Mon Jul 25 17:02:06 2022
 import numpy as np
 import matplotlib.pyplot as plt
 
-save_path = r"H:\ShockTubeData\DATA_MATT_PATRICK_TRIP_2\CO\averaged CO shock tube data\\"
+save_path = r"E:\ShockTubeData\DATA_MATT_PATRICK_TRIP_2\CO\averaged CO shock tube data\\"
 
 
 which_set = ['1ArHe', '2ArHe', '3ArHe', '4ArHe',
@@ -43,23 +45,23 @@ files = ["CO_299x70x15046.npy",  # 9
          "vacuum_background_132804x15046.bin", # vac on 6/21
          "vacuum_background_132804x15046.bin"] # vac on 6/23
 
-folders = [r"H:\ShockTubeData\DATA_MATT_PATRICK_TRIP_2\CO\06-21-22\PHASE_CORRECTED_DATA\battalion_9\\",  
-           r"H:\ShockTubeData\DATA_MATT_PATRICK_TRIP_2\CO\06-21-22\PHASE_CORRECTED_DATA\battalion_10\\", 
-           r"H:\ShockTubeData\DATA_MATT_PATRICK_TRIP_2\CO\06-21-22\PHASE_CORRECTED_DATA\battalion_16\\", 
-           r"H:\ShockTubeData\DATA_MATT_PATRICK_TRIP_2\CO\06-21-22\PHASE_CORRECTED_DATA\battalion_21\\",
-           r"H:\ShockTubeData\DATA_MATT_PATRICK_TRIP_2\CO\06-21-22\PHASE_CORRECTED_DATA\battalion_25\\",
+folders = [r"E:\ShockTubeData\DATA_MATT_PATRICK_TRIP_2\CO\06-21-22\PHASE_CORRECTED_DATA\battalion_9\\",  
+           r"E:\ShockTubeData\DATA_MATT_PATRICK_TRIP_2\CO\06-21-22\PHASE_CORRECTED_DATA\battalion_10\\", 
+           r"E:\ShockTubeData\DATA_MATT_PATRICK_TRIP_2\CO\06-21-22\PHASE_CORRECTED_DATA\battalion_16\\", 
+           r"E:\ShockTubeData\DATA_MATT_PATRICK_TRIP_2\CO\06-21-22\PHASE_CORRECTED_DATA\battalion_21\\",
+           r"E:\ShockTubeData\DATA_MATT_PATRICK_TRIP_2\CO\06-21-22\PHASE_CORRECTED_DATA\battalion_25\\",
            
-           r"H:\ShockTubeData\DATA_MATT_PATRICK_TRIP_2\CO\06-22-22\battalion_12\\",
-           r"H:\ShockTubeData\DATA_MATT_PATRICK_TRIP_2\CO\06-22-22\battalion_13\\", 
+           r"E:\ShockTubeData\DATA_MATT_PATRICK_TRIP_2\CO\06-22-22\battalion_12\\",
+           r"E:\ShockTubeData\DATA_MATT_PATRICK_TRIP_2\CO\06-22-22\battalion_13\\", 
            
-           r"H:\ShockTubeData\DATA_MATT_PATRICK_TRIP_2\CO\06-23-22\PHASE_CORRECTED_DATA\battalion_5\\", 
-           r"H:\ShockTubeData\DATA_MATT_PATRICK_TRIP_2\CO\06-23-22\PHASE_CORRECTED_DATA\battalion_9\\", 
-           r"H:\ShockTubeData\DATA_MATT_PATRICK_TRIP_2\CO\06-23-22\PHASE_CORRECTED_DATA\battalion_15\\",
-           r"H:\ShockTubeData\DATA_MATT_PATRICK_TRIP_2\CO\06-23-22\PHASE_CORRECTED_DATA\battalion_17\\",
-           r"H:\ShockTubeData\DATA_MATT_PATRICK_TRIP_2\CO\06-23-22\PHASE_CORRECTED_DATA\battalion_18\\", 
+           r"E:\ShockTubeData\DATA_MATT_PATRICK_TRIP_2\CO\06-23-22\PHASE_CORRECTED_DATA\battalion_5\\", 
+           r"E:\ShockTubeData\DATA_MATT_PATRICK_TRIP_2\CO\06-23-22\PHASE_CORRECTED_DATA\battalion_9\\", 
+           r"E:\ShockTubeData\DATA_MATT_PATRICK_TRIP_2\CO\06-23-22\PHASE_CORRECTED_DATA\battalion_15\\",
+           r"E:\ShockTubeData\DATA_MATT_PATRICK_TRIP_2\CO\06-23-22\PHASE_CORRECTED_DATA\battalion_17\\",
+           r"E:\ShockTubeData\DATA_MATT_PATRICK_TRIP_2\CO\06-23-22\PHASE_CORRECTED_DATA\battalion_18\\", 
            
-           r"H:\ShockTubeData\DATA_MATT_PATRICK_TRIP_2\CO\06-21-22\Vaccum_Background\\", 
-           r"H:\ShockTubeData\DATA_MATT_PATRICK_TRIP_2\CO\06-23-22\Vacuum_Background\\"]
+           r"E:\ShockTubeData\DATA_MATT_PATRICK_TRIP_2\CO\06-21-22\Vaccum_Background\\", 
+           r"E:\ShockTubeData\DATA_MATT_PATRICK_TRIP_2\CO\06-23-22\Vacuum_Background\\"]
 
 
 for i, which in enumerate(which_files): 
