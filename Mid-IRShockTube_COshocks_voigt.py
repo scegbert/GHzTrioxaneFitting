@@ -1,10 +1,5 @@
 #%% -------------------------------------- load some libraries -------------------------------------- 
 
-# delay until the processor is running below XX% load
-import time 
-
-# time.sleep(60*60*5) # hang out for X seconds
-
 import numpy as np
 import matplotlib.pyplot as plt
 

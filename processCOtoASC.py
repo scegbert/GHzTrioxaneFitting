@@ -51,9 +51,10 @@ for meas_file in meas_file_names:
     trans_meas = trans_all[meas_file]
     wvn_full = trans_meas[0]
     
-    shift = np.mean(fit_results_meas[:,6])
+    shift = 0 # np.mean(fit_results_meas[:,6])
     
-    print('{}    +/-     {}'.format(shift, np.std(fit_results_meas[:,6])))
+    print(meas_file)
+    print('     {:.5f}    +/-     {:.5f}'.format(shift, np.std(fit_results_meas[:,6])))
     
     wvn_full+= shift
     

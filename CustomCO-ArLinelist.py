@@ -513,6 +513,8 @@ df_Ar_HITRAN = df_CO.copy()
 df_Ar_HITRAN.gamma_air = Pade_23(df_Ar_HITRAN.quanta_m_abs, *parameters_Ar_Pade_23)
 df_Ar_HITRAN.n_air = Pade_23(df_Ar_HITRAN.quanta_m_abs, *n_parameters_Ar_Pade_23)
 
+# df_Ar_HITRAN.delta_air = 0
+
 # only changing things tp fit equation for R branch m<20
 df_Ar_HITRAN.loc[(df_Ar_HITRAN.quanta_branch=='R') & (df_Ar_HITRAN.quanta_m<20), 'delta_air'] = np.poly1d(
     delta_parameters_Ar_poly2R)(df_Ar_HITRAN[(df_Ar_HITRAN.quanta_branch=='R') & (df_Ar_HITRAN.quanta_m<20)].quanta_m)
@@ -534,7 +536,7 @@ for prop in ['delta_air', 'gamma_air', 'n_air']:
 
 
 
-# db.df_to_par(df_Ar_HITRAN, par_name = molecule+'_Ar', save_dir=d_database)
+db.df_to_par(df_Ar_HITRAN, par_name = molecule+'_Ar', save_dir=d_database)
 
 
 

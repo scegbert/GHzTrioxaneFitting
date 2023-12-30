@@ -1,7 +1,7 @@
 #%% -------------------------------------- load some libraries -------------------------------------- 
 
-import time 
-time.sleep((60*60*2))
+# import time 
+# time.sleep((60*60*2))
 
 import numpy as np
 import matplotlib.pyplot as plt
@@ -39,9 +39,10 @@ path_CO_temp = r"\\linelists\temp\\"
 plot_fits = True
 save_fits = True
 
-ig_start = 0 # start processing IG's at #ig_start
+ig_start = 30 # start processing IG's at #ig_start
 ig_stop = 69 # assume the process has completed itself by ig_stop 
-ig_avg = 1 # how many to average together
+ig_avg = 5 # how many to average together
+runnning_average = False 
 
 ig_inc_shock = 19.5 # average location of the incident shock (this is what the data is clocked off of)
 t_inc2ref_shock = 35 # time between incident and reflected shock in microseconds
@@ -101,7 +102,7 @@ if co_argon_database: molecule_name = 'CO_Ar'
 else: molecule_name = 'CO'
 
 molecule_id = 5
-PL = 1.27 # cm length of cell in furnace (double pass)
+PL = 1.27 # cm length of shok tube
 y_CO = 0.05
 
 T_pre = 300 # temperature in K before the shock (for scaling trioxane measurement)
@@ -131,17 +132,17 @@ df_CO = df_CO[(df_CO.nu > wvn2_fit[0]) & (df_CO.nu < wvn2_fit[1])] # wavenumber 
 nu_delta = np.mean(df_CO[df_CO.quanta_U == 1].nu.diff()) # spacing between features in fundamental
 
 separation = nu_delta / 4
-which = (((df_CO.nu.diff() > separation*1.25)&(-df_CO.nu.diff(periods=-1) > separation*1.25))|(df_CO.quanta_U == 1))
-which = (df_CO.quanta_U == 1) # tried without and got noiser T than I had seen earlier. Trying again. 
-df_CO_fund = df_CO[which].sort_values(['quanta_U','quanta_m']) # only looking at fundametal transitions for now, sort for plotting
-
+# which = (((df_CO.nu.diff() > separation*1.25)&(-df_CO.nu.diff(periods=-1) > separation*1.25))|(df_CO.quanta_U == 1))
+# which = (df_CO.quanta_U == 1) # tried without and got noiser T than I had seen earlier. Trying again. 
+# df_CO_fund = df_CO[which].sort_values(['quanta_U','quanta_m']) # only looking at fundametal transitions for now, sort for plotting
+df_CO_fund = df_CO.copy()
 
 #%% -------------------------------------- setup for given file and load measurement data --------------------------------------   
     
 fit_results_feature = {}
 fit_results_global = {}
 
-# trans_all = {}
+trans_all = {}
 
 for i_file, meas_file in enumerate(meas_file_names):     
         
@@ -152,7 +153,7 @@ for i_file, meas_file in enumerate(meas_file_names):
     
     # print(meas_file)
     # time.sleep(5)
-        
+    
     if i_file in [1, 5,6,7,8]: i_vac = 0
     else: i_vac = 1
     
@@ -168,12 +169,19 @@ for i_file, meas_file in enumerate(meas_file_names):
     IG_all = np.load(data_folder+meas_file+'.npy') 
     
 #%% -------------------------------------- average IGs together as desired (loop it) -------------------------------------- 
-    
-    # program will loop through them like this (assuming bins_avg = 3, ig_start = 15): 15b1+15b2+15b3, 15b2+15b3+15b4, ..., 15b7+15b8+16b1, 15b8+16b1+16b3, ...
-    ig_start_iters = np.arange(ig_start, ig_stop - ig_avg+2)
-            
+
+    if runnning_average: 
+        # program will loop through them like this (assuming bins_avg = 3, ig_start = 15): 15b1+15b2+15b3, 15b2+15b3+15b4, ..., 15b7+15b8+16b1, 15b8+16b1+16b3, ...
+        ig_start_iters = np.arange(ig_start, ig_stop - ig_avg+2)
+
+    else: 
+        
+        ig_start_iters = np.arange(ig_start, ig_stop - ig_avg+2, ig_avg)
+                
     fit_results_feature[meas_file] = np.zeros((len(ig_start_iters), len(df_CO_fund.nu), 3 + 2*len(fits_plot)))
     fit_results_global[meas_file] = np.zeros((len(ig_start_iters), 6 + 2*len(fits_plot)))
+    
+    trans_all[meas_file] = [None] * (len(ig_start_iters)+1)
     
     for i_ig, ig_start_iter in enumerate(ig_start_iters): 
         
@@ -213,7 +221,8 @@ for i_file, meas_file in enumerate(meas_file_names):
         
         trans_meas[3946] = 1 # remove the peak from the giant CEO beat spike
         
-        # trans_all[meas_file] = trans_meas
+        trans_all[meas_file][0] = wvn
+        trans_all[meas_file][i_ig+1] = trans_meas
 
         abs_meas = - np.log(trans_meas)
         
@@ -480,8 +489,11 @@ for i_file, meas_file in enumerate(meas_file_names):
         
         # plt.close()
 
-np.save('fit results global all features', fit_results_global)
+np.save('fit results for labfit - narrow', [fit_results_global, trans_all])
 
+
+
+sdfsdfsdfsdfsdf
 
         #%% -------------------------------------- plot the boltzmann curve you just fit -------------------------------------- 
 
